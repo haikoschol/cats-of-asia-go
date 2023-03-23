@@ -1,4 +1,4 @@
-module cats-of-asia
+module github.com/haikoschol/cats-of-asia
 
 go 1.20
 
