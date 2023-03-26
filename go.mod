@@ -13,6 +13,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/gphotosuploader/googlemirror v0.5.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/oauth2 v0.6.0 // indirect
 	google.golang.org/api v0.103.0 // indirect

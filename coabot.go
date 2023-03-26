@@ -45,11 +45,11 @@ type MediaItem struct {
 	Filename string
 
 	// CreationTime is the time when the photo or video was taken, in the timezone where it was taken.
-	CreationTime time.Time
+	CreationTime time.Time // TODO change to method and lazy load in filesystem impl
 
-	BaseUrl string // FIXME this is a Google Photos implementation detail
-
-	// TODO add GPS coordinates
+	Latitude  float64 // TODO change to method and lazy load in filesystem impl
+	Longitude float64 // TODO change to method and lazy load in filesystem impl
+	BaseUrl   string  // FIXME this is a Google Photos implementation detail
 
 	// Category denotes the type of media.
 	Category MediaCategory

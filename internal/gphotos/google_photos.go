@@ -105,6 +105,8 @@ func (gpc googlePhotosClient) GetMediaItems() ([]coabot.MediaItem, error) {
 			AlbumId:      gpc.Id(),
 			Filename:     item.Filename,
 			CreationTime: creationTime,
+			Latitude:     -1.0, // sadness https://issuetracker.google.com/issues/80379228
+			Longitude:    -1.0,
 			BaseUrl:      item.BaseUrl,
 			Category:     coabot.Photo, // TODO support video
 		}
