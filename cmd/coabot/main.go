@@ -17,15 +17,14 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
+	"github.com/haikoschol/cats-of-asia/internal/bot"
 	filesystem_album "github.com/haikoschol/cats-of-asia/internal/fsalbum"
+	google_maps_geocoder "github.com/haikoschol/cats-of-asia/internal/gmaps"
 	google_photos "github.com/haikoschol/cats-of-asia/internal/gphotos"
 	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
 	_ "github.com/joho/godotenv/autoload"
-	"googlemaps.github.io/maps"
 	_ "image/jpeg"
 	"log"
 	"os"
@@ -72,11 +71,11 @@ func main() {
 		}
 	}
 
-	var mapsClient *maps.Client
+	var geocoder coabot.Geocoder
 	if googleMapsApiKey != "" {
-		mapsClient, err = maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
+		geocoder, err = google_maps_geocoder.New(googleMapsApiKey)
 		if err != nil {
-			log.Fatalf("unable to create Google Maps API client: %v", err)
+			log.Fatal(err)
 		}
 	}
 
@@ -87,90 +86,11 @@ func main() {
 		AccessSecret:   twitterAccessSecret,
 	})
 
-	mediaItems, err := album.GetMediaItems()
-	if err != nil {
+	bobTheBot := bot.New(state, album, publisher, geocoder, 4242)
+
+	if err := bobTheBot.GoOutIntoTheWorldAndDoBotThings(); err != nil {
 		log.Fatal(err)
 	}
-
-	mediaItem := coabot.PickRandomUnusedMediaItem(mediaItems, state)
-
-	meta, err := mediaItem.Metadata()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	description, err := buildDescription(meta, mapsClient)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := publisher.Publish(mediaItem, description); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := state.Add(mediaItem); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func buildDescription(meta *coabot.MediaMetadata, mapsClient *maps.Client) (string, error) {
-	location := "an undisclosed location"
-	if mapsClient != nil {
-		var err error
-		location, err = lookupCityOrCountry(meta.Latitude, meta.Longitude, mapsClient)
-		if err != nil {
-			return "", err
-		}
-	}
-
-	description := fmt.Sprintf(
-		"Another fine feline, captured in %s on %v, %v %d %d",
-		location,
-		meta.CreationTime.Weekday(),
-		meta.CreationTime.Month(),
-		meta.CreationTime.Day(),
-		meta.CreationTime.Year(),
-	)
-
-	return description, nil
-}
-
-func lookupCityOrCountry(latitude, longitude float64, mapsClient *maps.Client) (string, error) {
-	r := &maps.GeocodingRequest{
-		LatLng: &maps.LatLng{
-			Lat: latitude,
-			Lng: longitude,
-		},
-	}
-
-	locs, err := mapsClient.ReverseGeocode(context.Background(), r)
-	if err != nil {
-		return "", err
-	}
-
-	if len(locs) == 0 || len(locs[0].AddressComponents) == 0 {
-		return "", fmt.Errorf(
-			"the Google Maps API did not return required address components for latitude %f, longitude %f",
-			latitude,
-			longitude,
-		)
-	}
-
-	country := ""
-	for _, comp := range locs[0].AddressComponents {
-		for _, t := range comp.Types {
-			if t == "administrative_area_level_1" {
-				return comp.LongName, nil
-			} else if t == "country" {
-				country = comp.LongName
-			}
-		}
-	}
-
-	if country == "" {
-		return "", fmt.Errorf("found neither city nor country for coordinates %f, %f", latitude, longitude)
-	}
-	return country, nil
 }
 
 func validateEnv() {

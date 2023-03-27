@@ -17,6 +17,7 @@
 package coabot
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 )
@@ -78,6 +79,31 @@ type ApplicationState interface {
 
 	// Contains checks whether the given MediaItem has already been added to the persistent application state.
 	Contains(item MediaItem) bool
+}
+
+// Geocoder codes geo
+type Geocoder interface {
+	// LookupCityAndCountry returns a city and country name for the given coordinates
+	LookupCityAndCountry(latitude, longitude float64) (CityAndCountry, error)
+}
+
+type CityAndCountry struct {
+	City    string
+	Country string
+}
+
+func (cac CityAndCountry) String() string {
+	if cac.City == "" && cac.Country != "" {
+		return cac.Country
+	}
+	if cac.Country == "" && cac.City != "" {
+		return cac.City
+	}
+	if cac.City == "" && cac.Country == "" {
+		return "an undisclosed location"
+	}
+
+	return fmt.Sprintf("%s, %s", cac.City, cac.Country)
 }
 
 // PickRandomUnusedMediaItem returns a random  MediaItem from the given slice, that is not contained in the given
