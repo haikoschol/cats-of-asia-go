@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
+	filesystem_album "github.com/haikoschol/cats-of-asia/internal/fsalbum"
 	google_photos "github.com/haikoschol/cats-of-asia/internal/gphotos"
 	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
@@ -29,14 +30,20 @@ import (
 )
 
 var (
-	albumId                 = os.Getenv("COABOT_ALBUM_ID")
-	statePath               = os.Getenv("COABOT_STATE_FILE")
-	oauthAppCredentialsPath = os.Getenv("COABOT_OAUTH_APP_CREDENTIALS_FILE")
-	googlePhotosTokenPath   = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
-	twitterConsumerKey      = os.Getenv("COABOT_TWITTER_CONSUMER_KEY")
-	twitterConsumerSecret   = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
-	twitterAccessToken      = os.Getenv("COABOT_TWITTER_ACCESS_TOKEN")
-	twitterAccessSecret     = os.Getenv("COABOT_TWITTER_ACCESS_SECRET")
+	statePath = os.Getenv("COABOT_STATE_FILE")
+
+	// Either COABOT_ALBUM_BASE_PATH is set or COABOT_GOOGLE_PHOTOS_* are, of both are set, a filesystem-backed album
+	// will be used.
+	fsAlbumBasePath = os.Getenv("COABOT_ALBUM_BASE_PATH")
+
+	googlePhotosAlbumId         = os.Getenv("COABOT_GOOGLE_PHOTOS_ALBUM_ID")
+	googlePhotosCredentialsPath = os.Getenv("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE")
+	googlePhotosTokenPath       = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
+
+	twitterConsumerKey    = os.Getenv("COABOT_TWITTER_CONSUMER_KEY")
+	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
+	twitterAccessToken    = os.Getenv("COABOT_TWITTER_ACCESS_TOKEN")
+	twitterAccessSecret   = os.Getenv("COABOT_TWITTER_ACCESS_SECRET")
 )
 
 func main() {
@@ -47,9 +54,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	album, err := google_photos.New(albumId, oauthAppCredentialsPath, googlePhotosTokenPath)
-	if err != nil {
-		log.Fatal(err)
+	var album coabot.MediaAlbum
+
+	if fsAlbumBasePath != "" {
+		album, err = filesystem_album.New(fsAlbumBasePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		album, err = google_photos.New(googlePhotosAlbumId, googlePhotosCredentialsPath, googlePhotosTokenPath)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	publisher := twitter.New(twitter.Credentials{
@@ -66,15 +82,20 @@ func main() {
 
 	mediaItem := coabot.PickRandomUnusedMediaItem(mediaItems, state)
 
-	mediaContent, err := album.GetContentFromMediaItem(mediaItem)
+	meta, err := mediaItem.Metadata()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// TODO add location and format date with local timezone
-	description := fmt.Sprintf("Another fine feline, captured at %s", mediaItem.CreationTime)
+	// TODO replace lat/long with name of nearest city
+	description := fmt.Sprintf(
+		"Another fine feline, captured at time %s and location %f, %f",
+		meta.CreationTime,
+		meta.Latitude,
+		meta.Longitude,
+	)
 
-	if err := publisher.Publish(mediaItem, mediaContent, description); err != nil {
+	if err := publisher.Publish(mediaItem, description); err != nil {
 		log.Fatal(err)
 	}
 
@@ -84,17 +105,32 @@ func main() {
 }
 
 func validateEnv() {
-	if albumId == "" {
-		log.Fatal("COABOT_ALBUM_ID env var missing")
+	if fsAlbumBasePath == "" {
+		if googlePhotosAlbumId == "" || googlePhotosCredentialsPath == "" || googlePhotosTokenPath == "" {
+			log.Fatal("either COABOT_ALBUM_BASE_PATH or COABOT_GOOGLE_PHOTOS_ALBUM_ID, " +
+				"COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE and COABOT_GOOGLE_PHOTOS_TOKEN_FILE need to be set")
+		}
+
+		bail := false
+		if googlePhotosAlbumId == "" {
+			log.Print("COABOT_GOOGLE_PHOTOS_ALBUM_ID env var missing")
+			bail = true
+		}
+		if googlePhotosCredentialsPath == "" {
+			log.Print("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE env var missing")
+			bail = true
+		}
+		if googlePhotosTokenPath == "" {
+			log.Print("COABOT_GOOGLE_PHOTOS_TOKEN_FILE env var missing")
+			bail = true
+		}
+		if bail {
+			os.Exit(1)
+		}
 	}
+
 	if statePath == "" {
 		log.Fatal("COABOT_STATE_FILE env var missing")
-	}
-	if oauthAppCredentialsPath == "" {
-		log.Fatal("COABOT_OAUTH_APP_CREDENTIALS_FILE env var missing")
-	}
-	if googlePhotosTokenPath == "" {
-		log.Fatal("COABOT_GOOGLE_PHOTOS_TOKEN_FILE env var missing")
 	}
 	if twitterConsumerKey == "" {
 		log.Fatal("COABOT_TWITTER_CONSUMER_KEY env var missing")

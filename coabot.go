@@ -24,35 +24,35 @@ import (
 // MediaCategory denotes whether a media item is a photo or video.
 type MediaCategory string
 
-// MediaContent denotes the raw data of a photo or video.
-type MediaContent []byte
-
 const (
 	Photo MediaCategory = "photo"
 	Video               = "video"
 )
 
-// MediaItem uniquely identifies a photo or video in a MediaAlbum and contains all relevant metadata.
-type MediaItem struct {
+type MediaMetadata struct {
+	// CreationTime is the time when the photo or video was taken, in the timezone where it was taken.
+	CreationTime time.Time
+	Latitude     float64
+	Longitude    float64
+}
+
+// MediaItem uniquely identifies a photo or video in a MediaAlbum and provides access to metadata and content.
+type MediaItem interface {
 	// Id is an identifier specific to the MediaAlbum implementation this MediaItem belongs to. It is only guaranteed
 	// to be unique in that album.
-	Id string
-
-	// AlbumId is the identifier of the MediaAlbum this MediaItem belongs to.
-	AlbumId string
+	Id() string
 
 	// Filename of the photo or video.
-	Filename string
-
-	// CreationTime is the time when the photo or video was taken, in the timezone where it was taken.
-	CreationTime time.Time // TODO change to method and lazy load in filesystem impl
-
-	Latitude  float64 // TODO change to method and lazy load in filesystem impl
-	Longitude float64 // TODO change to method and lazy load in filesystem impl
-	BaseUrl   string  // FIXME this is a Google Photos implementation detail
+	Filename() string
 
 	// Category denotes the type of media.
-	Category MediaCategory
+	Category() MediaCategory
+
+	// Metadata returns info from EXIF tags
+	Metadata() (*MediaMetadata, error)
+
+	// Content returns the raw bytes of the photo or video
+	Content() ([]byte, error)
 }
 
 // MediaAlbum is a repository of media items.
@@ -62,15 +62,12 @@ type MediaAlbum interface {
 
 	// GetMediaItems lists all media items in the album.
 	GetMediaItems() ([]MediaItem, error)
-
-	// GetContentFromMediaItem retrieves the raw data of a photo or video represented by the given MediaItem.
-	GetContentFromMediaItem(item MediaItem) (MediaContent, error)
 }
 
 // Publisher allows publishing photos or videos.
 type Publisher interface {
 	// Publish sends a photo or video together with a description to a platform.
-	Publish(item MediaItem, content MediaContent, description string) error
+	Publish(item MediaItem, description string) error
 }
 
 // ApplicationState provides a persistence mechanism for keeping track of which items in a MediaAlbum have already been

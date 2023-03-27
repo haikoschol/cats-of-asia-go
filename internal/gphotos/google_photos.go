@@ -100,25 +100,52 @@ func (gpc googlePhotosClient) GetMediaItems() ([]coabot.MediaItem, error) {
 			)
 		}
 
-		mediaItems[i] = coabot.MediaItem{
-			Id:           item.Id,
-			AlbumId:      gpc.Id(),
-			Filename:     item.Filename,
-			CreationTime: creationTime,
-			Latitude:     -1.0, // sadness https://issuetracker.google.com/issues/80379228
-			Longitude:    -1.0,
-			BaseUrl:      item.BaseUrl,
-			Category:     coabot.Photo, // TODO support video
+		mediaItems[i] = googlePhotosItem{
+			id:           item.Id,
+			albumId:      gpc.Id(),
+			filename:     item.Filename,
+			creationTime: creationTime,
+			baseUrl:      item.BaseUrl,
 		}
 	}
 	return mediaItems, nil
 }
 
-func (gpc googlePhotosClient) GetContentFromMediaItem(item coabot.MediaItem) (coabot.MediaContent, error) {
-	// https://developers.google.com/photos/library/guides/access-media-items#image-base-urls
-	url := fmt.Sprintf("%s=d", item.BaseUrl)
+type googlePhotosItem struct {
+	id           string
+	albumId      string
+	filename     string
+	creationTime time.Time
+	baseUrl      string
+	category     coabot.MediaCategory
+	client       *http.Client
+}
 
-	response, err := gpc.client.Get(url)
+func (item googlePhotosItem) Id() string {
+	return fmt.Sprintf("%s-%s", item.albumId, item.id)
+}
+
+func (item googlePhotosItem) Filename() string {
+	return item.Filename()
+}
+
+func (item googlePhotosItem) Category() coabot.MediaCategory {
+	return coabot.Photo // TODO support video
+}
+
+func (item googlePhotosItem) Metadata() (*coabot.MediaMetadata, error) {
+	return &coabot.MediaMetadata{
+		CreationTime: item.creationTime,
+		Latitude:     -1.0, // sadness https://issuetracker.google.com/issues/80379228
+		Longitude:    -1.0,
+	}, nil
+}
+
+func (item googlePhotosItem) Content() ([]byte, error) {
+	// https://developers.google.com/photos/library/guides/access-media-items#image-base-urls
+	url := fmt.Sprintf("%s=d", item.baseUrl)
+
+	response, err := item.client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve media content from media item base URL %s: %w", url, err)
 	}

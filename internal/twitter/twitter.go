@@ -57,12 +57,8 @@ func New(creds Credentials) coabot.Publisher {
 	}
 }
 
-func (tp twitterPublisher) Publish(
-	item coabot.MediaItem,
-	content coabot.MediaContent,
-	description string,
-) error {
-	upload, err := tp.uploadMedia(content, item)
+func (tp twitterPublisher) Publish(item coabot.MediaItem, description string) error {
+	upload, err := tp.uploadMedia(item)
 
 	_, _, err = tp.client.Statuses.Update(description, &twitter.StatusUpdateParams{
 		MediaIds: []int64{upload.MediaId},
@@ -78,13 +74,18 @@ type mediaUpload struct {
 	MediaId int64 `json:"media_id"`
 }
 
-func (tp twitterPublisher) uploadMedia(content coabot.MediaContent, item coabot.MediaItem) (*mediaUpload, error) {
+func (tp twitterPublisher) uploadMedia(item coabot.MediaItem) (*mediaUpload, error) {
 	b := &bytes.Buffer{}
 	form := multipart.NewWriter(b)
 
-	fw, err := form.CreateFormFile("media", item.Filename)
+	fw, err := form.CreateFormFile("media", item.Filename())
 	if err != nil {
 		return nil, fmt.Errorf("unable to encode media for upload to Twitter: %w", err)
+	}
+
+	content, err := item.Content()
+	if err != nil {
+		return nil, fmt.Errorf("unable to read content from media item %s: %w", item.Id(), err)
 	}
 
 	if _, err := fw.Write(content); err != nil {

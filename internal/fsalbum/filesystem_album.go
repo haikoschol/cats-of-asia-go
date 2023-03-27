@@ -23,7 +23,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	"time"
 )
 
 type filesystemAlbum struct {
@@ -70,20 +69,10 @@ func (fsa filesystemAlbum) GetMediaItems() ([]coabot.MediaItem, error) {
 	items := []coabot.MediaItem{}
 	for _, entry := range entries {
 		if isSupportedMedia(entry.Name()) {
-			meta, err := fsa.getMetadata(entry.Name())
-			if err != nil {
-				return nil, err
-			}
-
-			item := coabot.MediaItem{
-				Id:           entry.Name(),
-				Filename:     entry.Name(),
-				BaseUrl:      path.Join(fsa.basePath, entry.Name()),
-				AlbumId:      fsa.Id(),
-				CreationTime: meta.creationTime,
-				Latitude:     meta.latitude,
-				Longitude:    meta.longitude,
-				Category:     coabot.Photo, // TODO support video
+			item := fsMediaItem{
+				filename: entry.Name(),
+				basePath: fsa.basePath,
+				albumId:  fsa.Id(),
 			}
 
 			items = append(items, item)
@@ -92,23 +81,26 @@ func (fsa filesystemAlbum) GetMediaItems() ([]coabot.MediaItem, error) {
 	return items, nil
 }
 
-func (fsa filesystemAlbum) GetContentFromMediaItem(item coabot.MediaItem) (coabot.MediaContent, error) {
-	mipath := path.Join(fsa.basePath, item.Filename)
-	data, err := os.ReadFile(mipath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read file at %s: %w", mipath, err)
-	}
-	return data, nil
+type fsMediaItem struct {
+	filename string
+	basePath string
+	albumId  string
 }
 
-type metadata struct {
-	creationTime time.Time
-	latitude     float64
-	longitude    float64
+func (fsi fsMediaItem) Id() string {
+	return path.Join(fsi.albumId, fsi.filename)
 }
 
-func (fsa filesystemAlbum) getMetadata(filename string) (*metadata, error) {
-	mipath := path.Join(fsa.basePath, filename)
+func (fsi fsMediaItem) Filename() string {
+	return fsi.filename
+}
+
+func (fsi fsMediaItem) Category() coabot.MediaCategory {
+	return coabot.Photo // TODO support video
+}
+
+func (fsi fsMediaItem) Metadata() (*coabot.MediaMetadata, error) {
+	mipath := path.Join(fsi.basePath, fsi.filename)
 	mediaFile, err := os.Open(mipath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read exif data from file at %s: %w", mipath, err)
@@ -130,11 +122,20 @@ func (fsa filesystemAlbum) getMetadata(filename string) (*metadata, error) {
 		return nil, fmt.Errorf("unable to read timestamp from  exif data in file at %s: %w", mipath, err)
 	}
 
-	return &metadata{
-		creationTime,
-		latitude,
-		longitude,
+	return &coabot.MediaMetadata{
+		CreationTime: creationTime,
+		Latitude:     latitude,
+		Longitude:    longitude,
 	}, nil
+}
+
+func (fsi fsMediaItem) Content() ([]byte, error) {
+	mipath := path.Join(fsi.basePath, fsi.filename)
+	data, err := os.ReadFile(mipath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read file at %s: %w", mipath, err)
+	}
+	return data, nil
 }
 
 func isSupportedMedia(filename string) bool {

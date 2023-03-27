@@ -26,11 +26,9 @@ import (
 
 const stateFilePermissions = 0644
 
-type stateId string
-
 type stateJSONFile struct {
 	Path       string
-	MediaItems map[stateId]coabot.MediaItem
+	MediaItems map[string]coabot.MediaItem
 }
 
 // New returns a coabot.ApplicationState implementation backed by a JSON file
@@ -49,7 +47,7 @@ func New(spath string) (coabot.ApplicationState, error) {
 
 	state := &stateJSONFile{
 		Path:       spath,
-		MediaItems: map[stateId]coabot.MediaItem{},
+		MediaItems: map[string]coabot.MediaItem{},
 	}
 
 	if !fileExists {
@@ -70,14 +68,12 @@ func New(spath string) (coabot.ApplicationState, error) {
 }
 
 func (sf *stateJSONFile) Add(item coabot.MediaItem) error {
-	id := sf.id(item)
-	sf.MediaItems[id] = item
+	sf.MediaItems[item.Id()] = item
 	return sf.save()
 }
 
 func (sf *stateJSONFile) Contains(item coabot.MediaItem) bool {
-	id := sf.id(item)
-	_, contains := sf.MediaItems[id]
+	_, contains := sf.MediaItems[item.Id()]
 	return contains
 }
 
@@ -92,8 +88,4 @@ func (sf *stateJSONFile) save() error {
 		return fmt.Errorf("unable to write JSON state file at %s: %w", sf.Path, err)
 	}
 	return nil
-}
-
-func (sf *stateJSONFile) id(item coabot.MediaItem) stateId {
-	return stateId(item.AlbumId + item.Id)
 }
