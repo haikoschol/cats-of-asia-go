@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
 	filesystem_album "github.com/haikoschol/cats-of-asia/internal/fsalbum"
@@ -24,6 +25,7 @@ import (
 	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
 	_ "github.com/joho/godotenv/autoload"
+	"googlemaps.github.io/maps"
 	_ "image/jpeg"
 	"log"
 	"os"
@@ -32,13 +34,15 @@ import (
 var (
 	statePath = os.Getenv("COABOT_STATE_FILE")
 
-	// Either COABOT_ALBUM_BASE_PATH is set or COABOT_GOOGLE_PHOTOS_* are, of both are set, a filesystem-backed album
-	// will be used.
+	// Either COABOT_ALBUM_BASE_PATH or COABOT_GOOGLE_PHOTOS_* must be set. If both are, a filesystem-backed album will
+	// be used.
 	fsAlbumBasePath = os.Getenv("COABOT_ALBUM_BASE_PATH")
 
 	googlePhotosAlbumId         = os.Getenv("COABOT_GOOGLE_PHOTOS_ALBUM_ID")
 	googlePhotosCredentialsPath = os.Getenv("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE")
 	googlePhotosTokenPath       = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
+
+	googleMapsApiKey = os.Getenv("COABOT_GOOGLE_MAPS_API_KEY")
 
 	twitterConsumerKey    = os.Getenv("COABOT_TWITTER_CONSUMER_KEY")
 	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
@@ -68,6 +72,14 @@ func main() {
 		}
 	}
 
+	var mapsClient *maps.Client
+	if googleMapsApiKey != "" {
+		mapsClient, err = maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
+		if err != nil {
+			log.Fatalf("unable to create Google Maps API client: %v", err)
+		}
+	}
+
 	publisher := twitter.New(twitter.Credentials{
 		ConsumerKey:    twitterConsumerKey,
 		ConsumerSecret: twitterConsumerSecret,
@@ -87,13 +99,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// TODO replace lat/long with name of nearest city
-	description := fmt.Sprintf(
-		"Another fine feline, captured at time %s and location %f, %f",
-		meta.CreationTime,
-		meta.Latitude,
-		meta.Longitude,
-	)
+	description, err := buildDescription(meta, mapsClient)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if err := publisher.Publish(mediaItem, description); err != nil {
 		log.Fatal(err)
@@ -102,6 +111,66 @@ func main() {
 	if err := state.Add(mediaItem); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func buildDescription(meta *coabot.MediaMetadata, mapsClient *maps.Client) (string, error) {
+	location := "an undisclosed location"
+	if mapsClient != nil {
+		var err error
+		location, err = lookupCityOrCountry(meta.Latitude, meta.Longitude, mapsClient)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	description := fmt.Sprintf(
+		"Another fine feline, captured in %s on %v, %v %d %d",
+		location,
+		meta.CreationTime.Weekday(),
+		meta.CreationTime.Month(),
+		meta.CreationTime.Day(),
+		meta.CreationTime.Year(),
+	)
+
+	return description, nil
+}
+
+func lookupCityOrCountry(latitude, longitude float64, mapsClient *maps.Client) (string, error) {
+	r := &maps.GeocodingRequest{
+		LatLng: &maps.LatLng{
+			Lat: latitude,
+			Lng: longitude,
+		},
+	}
+
+	locs, err := mapsClient.ReverseGeocode(context.Background(), r)
+	if err != nil {
+		return "", err
+	}
+
+	if len(locs) == 0 || len(locs[0].AddressComponents) == 0 {
+		return "", fmt.Errorf(
+			"the Google Maps API did not return required address components for latitude %f, longitude %f",
+			latitude,
+			longitude,
+		)
+	}
+
+	country := ""
+	for _, comp := range locs[0].AddressComponents {
+		for _, t := range comp.Types {
+			if t == "administrative_area_level_1" {
+				return comp.LongName, nil
+			} else if t == "country" {
+				country = comp.LongName
+			}
+		}
+	}
+
+	if country == "" {
+		return "", fmt.Errorf("found neither city nor country for coordinates %f, %f", latitude, longitude)
+	}
+	return country, nil
 }
 
 func validateEnv() {

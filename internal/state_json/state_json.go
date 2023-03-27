@@ -28,7 +28,7 @@ const stateFilePermissions = 0644
 
 type stateJSONFile struct {
 	Path       string
-	MediaItems map[string]coabot.MediaItem
+	MediaItems map[string]bool
 }
 
 // New returns a coabot.ApplicationState implementation backed by a JSON file
@@ -47,7 +47,7 @@ func New(spath string) (coabot.ApplicationState, error) {
 
 	state := &stateJSONFile{
 		Path:       spath,
-		MediaItems: map[string]coabot.MediaItem{},
+		MediaItems: make(map[string]bool),
 	}
 
 	if !fileExists {
@@ -68,7 +68,7 @@ func New(spath string) (coabot.ApplicationState, error) {
 }
 
 func (sf *stateJSONFile) Add(item coabot.MediaItem) error {
-	sf.MediaItems[item.Id()] = item
+	sf.MediaItems[item.Id()] = true
 	return sf.save()
 }
 
