@@ -22,6 +22,7 @@ import (
 	filesystem_album "github.com/haikoschol/cats-of-asia/internal/fsalbum"
 	google_maps_geocoder "github.com/haikoschol/cats-of-asia/internal/gmaps"
 	google_photos "github.com/haikoschol/cats-of-asia/internal/gphotos"
+	"github.com/haikoschol/cats-of-asia/internal/mastodon"
 	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
 	_ "github.com/joho/godotenv/autoload"
@@ -42,6 +43,9 @@ var (
 	googlePhotosTokenPath       = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
 
 	googleMapsApiKey = os.Getenv("COABOT_GOOGLE_MAPS_API_KEY")
+
+	mastodonServer      = os.Getenv("COABOT_MASTODON_SERVER")
+	mastodonAccessToken = os.Getenv("COABOT_MASTODON_ACCESS_TOKEN")
 
 	twitterConsumerKey    = os.Getenv("COABOT_TWITTER_CONSUMER_KEY")
 	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
@@ -79,20 +83,50 @@ func main() {
 		}
 	}
 
-	publisher := twitter.New(twitter.Credentials{
-		ConsumerKey:    twitterConsumerKey,
-		ConsumerSecret: twitterConsumerSecret,
-		AccessToken:    twitterAccessToken,
-		AccessSecret:   twitterAccessSecret,
-	})
+	publishers, err := buildPublishers()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	bobTheBot := bot.New(state, album, publisher, geocoder, 4242)
+	bobTheBot := bot.New(state, album, publishers[0], geocoder, 4242)
+
+	if len(publishers) > 1 {
+		for _, publisher := range publishers {
+			bobTheBot.AddPublisher(publisher)
+		}
+	}
 
 	if err := bobTheBot.GoOutIntoTheWorldAndDoBotThings(); err != nil {
 		log.Fatal(err)
 	}
 }
 
+func buildPublishers() ([]coabot.Publisher, error) {
+	publishers := []coabot.Publisher{}
+
+	// should be unneccesary to check all mastodon config vars since validateEnv() already did that
+	if mastodonServer != "" {
+		mp, err := mastodon.New(mastodonServer, mastodonAccessToken)
+		if err != nil {
+			return nil, err
+		}
+		publishers = append(publishers, mp)
+	}
+
+	if twitterConsumerKey != "" {
+		tp := twitter.New(twitter.Credentials{
+			ConsumerKey:    twitterConsumerKey,
+			ConsumerSecret: twitterConsumerSecret,
+			AccessToken:    twitterAccessToken,
+			AccessSecret:   twitterAccessSecret,
+		})
+		publishers = append(publishers, tp)
+	}
+
+	return publishers, nil
+}
+
+// the logic is getting very hairy with all this optional config. should probably use a robust env/config mgmt library
 func validateEnv() {
 	if fsAlbumBasePath == "" {
 		if googlePhotosAlbumId == "" || googlePhotosCredentialsPath == "" || googlePhotosTokenPath == "" {
@@ -121,16 +155,29 @@ func validateEnv() {
 	if statePath == "" {
 		log.Fatal("COABOT_STATE_FILE env var missing")
 	}
-	if twitterConsumerKey == "" {
-		log.Fatal("COABOT_TWITTER_CONSUMER_KEY env var missing")
-	}
-	if twitterConsumerSecret == "" {
-		log.Fatal("COABOT_TWITTER_CONSUMER_SECRET env var missing")
-	}
-	if twitterAccessToken == "" {
-		log.Fatal("COABOT_TWITTER_ACCESS_TOKEN env var missing")
-	}
-	if twitterAccessSecret == "" {
-		log.Fatal("COABOT_TWITTER_ACCESS_SECRET env var missing")
+
+	if twitterConsumerKey == "" && twitterConsumerSecret == "" && twitterAccessToken == "" && twitterAccessSecret == "" {
+		if mastodonServer == "" && mastodonAccessToken == "" {
+			log.Fatal("either COABOT_MASTODON_* or COABOT_TWITTER_* env vars need to be set")
+		}
+		if mastodonServer == "" {
+			log.Fatal("COABOT_MASTODON_SERVER env var missing")
+		}
+		if mastodonAccessToken == "" {
+			log.Fatal("COABOT_MASTODON_ACCESS_TOKEN env var missing")
+		}
+	} else {
+		if twitterConsumerKey == "" {
+			log.Fatal("COABOT_TWITTER_CONSUMER_KEY env var missing")
+		}
+		if twitterConsumerSecret == "" {
+			log.Fatal("COABOT_TWITTER_CONSUMER_SECRET env var missing")
+		}
+		if twitterAccessToken == "" {
+			log.Fatal("COABOT_TWITTER_ACCESS_TOKEN env var missing")
+		}
+		if twitterAccessSecret == "" {
+			log.Fatal("COABOT_TWITTER_ACCESS_SECRET env var missing")
+		}
 	}
 }

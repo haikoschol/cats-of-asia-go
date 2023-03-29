@@ -20,6 +20,7 @@ import (
 	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
 	"github.com/rwcarlsen/goexif/exif"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -136,6 +137,15 @@ func (fsi fsMediaItem) Content() ([]byte, error) {
 		return nil, fmt.Errorf("unable to read file at %s: %w", mipath, err)
 	}
 	return data, nil
+}
+
+func (fsi fsMediaItem) Read() (io.ReadCloser, error) {
+	mipath := path.Join(fsi.basePath, fsi.filename)
+	f, err := os.Open(mipath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open file at %s: %w", mipath, err)
+	}
+	return f, err
 }
 
 func isSupportedMedia(filename string) bool {

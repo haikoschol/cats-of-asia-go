@@ -24,6 +24,7 @@ import (
 	coabot "github.com/haikoschol/cats-of-asia"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -142,6 +143,21 @@ func (item googlePhotosItem) Metadata() (*coabot.MediaMetadata, error) {
 }
 
 func (item googlePhotosItem) Content() ([]byte, error) {
+	rc, err := item.Read()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	content := []byte{}
+	_, err = rc.Read(content)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read media content from response body: %w", err)
+	}
+	return content, nil
+}
+
+func (item googlePhotosItem) Read() (io.ReadCloser, error) {
 	// https://developers.google.com/photos/library/guides/access-media-items#image-base-urls
 	url := fmt.Sprintf("%s=d", item.baseUrl)
 
@@ -149,14 +165,7 @@ func (item googlePhotosItem) Content() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve media content from media item base URL %s: %w", url, err)
 	}
-	defer response.Body.Close()
-
-	content := make([]byte, response.ContentLength)
-	_, err = response.Body.Read(content)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read media content from response body: %w", err)
-	}
-	return content, nil
+	return response.Body, nil
 }
 
 func getConfigFromFile(credentialsPath string) (*oauth2.Config, error) {

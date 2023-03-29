@@ -102,6 +102,7 @@ func (b *Bot) post(w http.ResponseWriter, req *http.Request) {
 	} else {
 		err := errors.New("failed to publish media to any platform")
 		b.handleError(err, w)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)

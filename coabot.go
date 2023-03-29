@@ -18,6 +18,7 @@ package coabot
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"time"
 )
@@ -54,6 +55,9 @@ type MediaItem interface {
 
 	// Content returns the raw bytes of the photo or video
 	Content() ([]byte, error)
+
+	// Read returns an io.ReadCloser for reading the media content. The caller is responsible for closing.
+	Read() (io.ReadCloser, error)
 }
 
 // MediaAlbum is a repository of media items.
