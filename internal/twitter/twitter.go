@@ -1,5 +1,5 @@
 // Copyright (C) 2023 Haiko Schol
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
