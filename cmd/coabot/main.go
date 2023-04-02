@@ -26,6 +26,7 @@ import (
 	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/matrix-org/gomatrix"
 	_ "image/jpeg"
 	"log"
 	"os"
@@ -51,6 +52,11 @@ var (
 	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
 	twitterAccessToken    = os.Getenv("COABOT_TWITTER_ACCESS_TOKEN")
 	twitterAccessSecret   = os.Getenv("COABOT_TWITTER_ACCESS_SECRET")
+
+	matrixServer      = os.Getenv("COABOT_MATRIX_SERVER")
+	matrixUser        = os.Getenv("COABOT_MATRIX_USER")
+	matrixAccessToken = os.Getenv("COABOT_MATRIX_ACCESS_TOKEN")
+	matrixLogRoomId   = os.Getenv("COABOT_MATRIX_LOG_ROOM_ID")
 )
 
 func main() {
@@ -88,7 +94,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bobTheBot, err := bot.New(state, album, publishers[0], geocoder, 4242)
+	matrix, err := gomatrix.NewClient(matrixServer, matrixUser, matrixAccessToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bobTheBot, err := bot.New(state, album, publishers[0], geocoder, matrix, matrixLogRoomId, 4242)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -182,5 +193,26 @@ func validateEnv() {
 		if twitterAccessSecret == "" {
 			log.Fatal("COABOT_TWITTER_ACCESS_SECRET env var missing")
 		}
+	}
+
+	bail := false
+	if matrixServer == "" {
+		log.Print("COABOT_MATRIX_SERVER env var missing")
+		bail = true
+	}
+	if matrixUser == "" {
+		log.Print("COABOT_MATRIX_USER env var missing")
+		bail = true
+	}
+	if matrixAccessToken == "" {
+		log.Print("COABOT_MATRIX_ACCESS_TOKEN env var missing")
+		bail = true
+	}
+	if matrixLogRoomId == "" {
+		log.Print("COABOT_MATRIX_LOG_ROOM_ID env var missing")
+		bail = true
+	}
+	if bail {
+		os.Exit(1)
 	}
 }

@@ -15,6 +15,7 @@ require (
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/gphotosuploader/googlemirror v0.5.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/matrix-org/gomatrix v0.0.0-20220926102614-ceba4d9f7530 // indirect
 	github.com/mattn/go-mastodon v0.0.6 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	github.com/tomnomnom/linkheader v0.0.0-20180905144013-02ca5825eb80 // indirect
