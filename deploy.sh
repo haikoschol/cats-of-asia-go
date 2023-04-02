@@ -9,6 +9,7 @@ then
 fi
 
 GOOS=linux GOARCH=amd64 go build github.com/haikoschol/cats-of-asia/cmd/coabot
+ssh -t ${COABOT_SERVER} "sudo systemctl stop coabot"
 scp coabot ${COABOT_SERVER}:/usr/local/bin/coabot
-ssh -t ${COABOT_SERVER} "sudo systemctl restart coabot"
+ssh -t ${COABOT_SERVER} "sudo systemctl start coabot"
 
