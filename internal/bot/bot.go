@@ -41,14 +41,27 @@ func New(
 	publisher coabot.Publisher,
 	geocoder coabot.Geocoder,
 	listenPort int,
-) *Bot {
+) (*Bot, error) {
+	if state == nil {
+		return nil, errors.New("state is nil")
+	}
+	if album == nil {
+		return nil, errors.New("album is nil")
+	}
+	if publisher == nil {
+		return nil, errors.New("publisher is nil")
+	}
+	if geocoder == nil {
+		return nil, errors.New("geocoder is nil")
+	}
+
 	return &Bot{
 		state:      state,
 		album:      album,
 		publishers: []coabot.Publisher{publisher},
 		geocoder:   geocoder,
 		listenPort: listenPort,
-	}
+	}, nil
 }
 
 func (b *Bot) AddPublisher(p coabot.Publisher) {
@@ -121,20 +134,17 @@ func (b *Bot) pickMediaItem() (*itemWithDescription, error) {
 			return nil, err
 		}
 
-		location := coabot.CityAndCountry{}
-		if b.geocoder != nil {
-			location, err = b.geocoder.LookupCityAndCountry(meta.Latitude, meta.Longitude)
-			if err != nil {
-				log.Printf(
-					"reverse geocoding failed for file %s in album %s: %v\n",
-					mediaItem.Filename(),
-					b.album.Id(),
-					err,
-				)
-				mediaItems = b.removeMediaItem(mediaItem, mediaItems)
-				tries += 1
-				continue
-			}
+		location, err := b.geocoder.LookupCityAndCountry(meta.Latitude, meta.Longitude)
+		if err != nil {
+			log.Printf(
+				"reverse geocoding failed for file %s in album %s: %v\n",
+				mediaItem.Filename(),
+				b.album.Id(),
+				err,
+			)
+			mediaItems = b.removeMediaItem(mediaItem, mediaItems)
+			tries += 1
+			continue
 		}
 
 		description, err := b.buildDescription(meta, location)

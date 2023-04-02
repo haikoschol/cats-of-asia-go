@@ -88,7 +88,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bobTheBot := bot.New(state, album, publishers[0], geocoder, 4242)
+	bobTheBot, err := bot.New(state, album, publishers[0], geocoder, 4242)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if len(publishers) > 1 {
 		for _, publisher := range publishers {
