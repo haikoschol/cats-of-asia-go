@@ -37,6 +37,10 @@ func New(serverUrl, accessToken string) (coabot.Publisher, error) {
 	}, nil
 }
 
+func (tp mastodonPublisher) Name() string {
+	return "Mastodon"
+}
+
 func (mp *mastodonPublisher) Publish(item coabot.MediaItem, description string) error {
 	rc, err := item.Read()
 	if err != nil {

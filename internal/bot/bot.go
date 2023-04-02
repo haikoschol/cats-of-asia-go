@@ -25,6 +25,8 @@ import (
 	"strings"
 )
 
+const maxGeocodingTries = 20
+
 type Bot struct {
 	state      coabot.ApplicationState
 	album      coabot.MediaAlbum
@@ -63,21 +65,7 @@ func (b *Bot) post(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	mediaItems, err := b.album.GetMediaItems()
-	if err != nil {
-		b.handleError(err, w)
-		return
-	}
-
-	mediaItem := coabot.PickRandomUnusedMediaItem(mediaItems, b.state)
-
-	meta, err := mediaItem.Metadata()
-	if err != nil {
-		b.handleError(err, w)
-		return
-	}
-
-	description, err := b.buildDescription(meta)
+	item, err := b.pickMediaItem()
 	if err != nil {
 		b.handleError(err, w)
 		return
@@ -85,17 +73,21 @@ func (b *Bot) post(w http.ResponseWriter, req *http.Request) {
 
 	published := false
 	for _, pub := range b.publishers {
-		if err := pub.Publish(mediaItem, description); err != nil {
-			log.Print(err)
+		if err := pub.Publish(item.mediaItem, item.description); err != nil {
+			log.Printf(
+				"unable to publish file %s from album %s to %s: %v\n",
+				item.mediaItem.Filename(),
+				b.album.Id(),
+				pub.Name(),
+				err,
+			)
 		} else {
 			published = true
 		}
 	}
 
-	log.Print(description)
-
 	if published {
-		if err := b.state.Add(mediaItem); err != nil {
+		if err := b.state.Add(item.mediaItem); err != nil {
 			log.Print(err)
 			return
 		}
@@ -108,22 +100,58 @@ func (b *Bot) post(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (b *Bot) handleError(err error, w http.ResponseWriter) {
-	log.Print(err)
-	w.WriteHeader(http.StatusInternalServerError)
+type itemWithDescription struct {
+	mediaItem   coabot.MediaItem
+	description string
 }
 
-func (b *Bot) buildDescription(meta *coabot.MediaMetadata) (string, error) {
-	location := coabot.CityAndCountry{}
+func (b *Bot) pickMediaItem() (*itemWithDescription, error) {
+	mediaItems, err := b.album.GetMediaItems()
+	if err != nil {
+		return nil, err
+	}
 
-	if b.geocoder != nil {
-		var err error
-		location, err = b.geocoder.LookupCityAndCountry(meta.Latitude, meta.Longitude)
+	var item *itemWithDescription
+	tries := 0
+	for item == nil && tries < maxGeocodingTries {
+		mediaItem := coabot.PickRandomUnusedMediaItem(mediaItems, b.state)
+
+		meta, err := mediaItem.Metadata()
 		if err != nil {
-			return "", err
+			return nil, err
+		}
+
+		location := coabot.CityAndCountry{}
+		if b.geocoder != nil {
+			location, err = b.geocoder.LookupCityAndCountry(meta.Latitude, meta.Longitude)
+			if err != nil {
+				log.Printf(
+					"reverse geocoding failed for file %s in album %s: %v\n",
+					mediaItem.Filename(),
+					b.album.Id(),
+					err,
+				)
+				mediaItems = b.removeMediaItem(mediaItem, mediaItems)
+				tries += 1
+				continue
+			}
+		}
+
+		description, err := b.buildDescription(meta, location)
+		if err != nil {
+			return nil, err
+		}
+
+		item = &itemWithDescription{
+			mediaItem,
+			description,
 		}
 	}
 
+	return item, nil
+}
+
+func (b *Bot) buildDescription(meta *coabot.MediaMetadata, location coabot.CityAndCountry) (string, error) {
 	description := fmt.Sprintf(
 		"Another fine feline, captured in %v on %v, %v %d %d",
 		location,
@@ -134,6 +162,21 @@ func (b *Bot) buildDescription(meta *coabot.MediaMetadata) (string, error) {
 	)
 
 	return description, nil
+}
+
+func (b *Bot) handleError(err error, w http.ResponseWriter) {
+	log.Print(err)
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
+func (b *Bot) removeMediaItem(item coabot.MediaItem, items []coabot.MediaItem) []coabot.MediaItem {
+	res := []coabot.MediaItem{}
+	for _, mi := range items {
+		if mi.Id() != item.Id() {
+			res = append(res, mi)
+		}
+	}
+	return res
 }
 
 func validateRequest(w http.ResponseWriter, req *http.Request) bool {

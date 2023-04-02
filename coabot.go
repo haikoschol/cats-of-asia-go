@@ -71,6 +71,8 @@ type MediaAlbum interface {
 
 // Publisher allows publishing photos or videos.
 type Publisher interface {
+	// Name returns either "Mastodon" or "Twitter" for now
+	Name() string
 	// Publish sends a photo or video together with a description to a platform.
 	Publish(item MediaItem, description string) error
 }

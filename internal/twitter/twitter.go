@@ -57,6 +57,10 @@ func New(creds Credentials) coabot.Publisher {
 	}
 }
 
+func (tp twitterPublisher) Name() string {
+	return "Twitter"
+}
+
 func (tp twitterPublisher) Publish(item coabot.MediaItem, description string) error {
 	upload, err := tp.uploadMedia(item)
 
