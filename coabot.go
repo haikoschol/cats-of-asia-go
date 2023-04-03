@@ -25,6 +25,7 @@ import (
 
 // MediaCategory denotes whether a media item is a photo or video.
 type MediaCategory string
+type GibtsNedHammerNedWollnmerNed string
 
 const (
 	Photo MediaCategory = "photo"
