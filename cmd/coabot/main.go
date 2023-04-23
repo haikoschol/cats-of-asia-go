@@ -120,7 +120,7 @@ func buildPublishers() ([]coabot.Publisher, error) {
 
 	// should be unneccesary to check all mastodon config vars since validateEnv() already did that
 	if mastodonServer != "" {
-		mp, err := mastodon.New(mastodonServer, mastodonAccessToken)
+		mp, err := mastodon.New(mastodonServer, mastodonAccessToken, []string{"#CatsOfAsia", "#CatsOfMastodon"})
 		if err != nil {
 			return nil, err
 		}

@@ -18,26 +18,36 @@ package mastodon
 
 import (
 	"context"
+	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
 	"github.com/mattn/go-mastodon"
+	"strings"
 )
 
+const MaxDefaultHashtags = 5
+
 type mastodonPublisher struct {
-	client *mastodon.Client
+	client          *mastodon.Client
+	defaultHashtags []string
 }
 
-func New(serverUrl, accessToken string) (coabot.Publisher, error) {
+func New(serverUrl, accessToken string, defaultHashtags []string) (coabot.Publisher, error) {
 	client := mastodon.NewClient(&mastodon.Config{
 		Server:      serverUrl,
 		AccessToken: accessToken,
 	})
 
+	if len(defaultHashtags) > MaxDefaultHashtags {
+		return nil, fmt.Errorf("%d is too many default hashtags. max is %d", len(defaultHashtags), MaxDefaultHashtags)
+	}
+
 	return &mastodonPublisher{
 		client,
+		defaultHashtags,
 	}, nil
 }
 
-func (tp mastodonPublisher) Name() string {
+func (mp *mastodonPublisher) Name() string {
 	return "Mastodon"
 }
 
@@ -57,6 +67,10 @@ func (mp *mastodonPublisher) Publish(item coabot.MediaItem, description string) 
 	attachment, err := mp.client.UploadMediaFromMedia(context.Background(), media)
 	if err != nil {
 		return err
+	}
+
+	if len(mp.defaultHashtags) > 0 {
+		description = fmt.Sprintf("%s %s", description, strings.Join(mp.defaultHashtags, " "))
 	}
 
 	toot := &mastodon.Toot{
