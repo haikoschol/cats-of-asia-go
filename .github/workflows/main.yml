@@ -16,4 +16,6 @@ jobs:
 
       - uses: ko-build/setup-ko@v0.6
       - run: ko build ./cmd/coabot
+        env:
+          KO_DOCKER_REPO=ghcr.io/haikoschol/cats-of-asia
 
