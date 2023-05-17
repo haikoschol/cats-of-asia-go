@@ -15,5 +15,5 @@ jobs:
       - uses: actions/checkout@v2
 
       - uses: ko-build/setup-ko@v0.6
-      - run: ko build
+      - run: ko build ./cmd/coabot
 
