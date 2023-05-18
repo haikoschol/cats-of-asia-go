@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - uses: ko-build/setup-ko@v0.6
-      - run: ko build ./cmd/coabot
+      - run: ko build --bare ./cmd/coabot
         env:
           KO_DOCKER_REPO: ghcr.io/haikoschol/cats-of-asia
 
