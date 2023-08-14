@@ -43,7 +43,7 @@ var (
 	googlePhotosCredentialsPath = os.Getenv("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE")
 	googlePhotosTokenPath       = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
 
-	googleMapsApiKey = os.Getenv("COABOT_GOOGLE_MAPS_API_KEY")
+	googleMapsApiKey = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
 
 	mastodonServer      = os.Getenv("COABOT_MASTODON_SERVER")
 	mastodonAccessToken = os.Getenv("COABOT_MASTODON_ACCESS_TOKEN")
