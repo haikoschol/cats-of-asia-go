@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -124,4 +125,10 @@ func PickRandomUnusedMediaItem(mediaItems []MediaItem, state ApplicationState) M
 
 	idx := rand.Intn(len(unusedItems))
 	return unusedItems[idx]
+}
+
+// IsSupportedMedia checks whether a given file type can be used by the bot/web app (JPEG only for now)
+func IsSupportedMedia(filename string) bool {
+	filename = strings.ToLower(filename)
+	return strings.HasSuffix(filename, ".jpg") || strings.HasSuffix(filename, ".jpeg")
 }
