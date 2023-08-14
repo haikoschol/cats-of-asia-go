@@ -23,7 +23,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"strings"
 )
 
 type filesystemAlbum struct {
@@ -42,7 +41,7 @@ func New(basePath string) (coabot.MediaAlbum, error) {
 
 	hasMedia := false
 	for _, entry := range entries {
-		if !entry.IsDir() && isSupportedMedia(entry.Name()) {
+		if !entry.IsDir() && coabot.IsSupportedMedia(entry.Name()) {
 			hasMedia = true
 			break
 		}
@@ -69,7 +68,7 @@ func (fsa filesystemAlbum) GetMediaItems() ([]coabot.MediaItem, error) {
 
 	items := []coabot.MediaItem{}
 	for _, entry := range entries {
-		if isSupportedMedia(entry.Name()) {
+		if coabot.IsSupportedMedia(entry.Name()) {
 			item := fsMediaItem{
 				filename: entry.Name(),
 				basePath: fsa.basePath,
@@ -146,9 +145,4 @@ func (fsi fsMediaItem) Read() (io.ReadCloser, error) {
 		return nil, fmt.Errorf("unable to open file at %s: %w", mipath, err)
 	}
 	return f, err
-}
-
-func isSupportedMedia(filename string) bool {
-	filename = strings.ToLower(filename)
-	return strings.HasSuffix(filename, ".jpg") || strings.HasSuffix(filename, ".jpeg")
 }
