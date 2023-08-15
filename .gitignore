@@ -1,7 +1,7 @@
 .idea
 .env
-cats-of-asia
 google_api_credentials.json
 token.json
 state.json
+dist/
 .DS_Store
