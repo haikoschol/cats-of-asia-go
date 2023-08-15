@@ -24,7 +24,6 @@ import (
 	coabot "github.com/haikoschol/cats-of-asia"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 	"github.com/rwcarlsen/goexif/exif"
 	"googlemaps.github.io/maps"
 	"io"

@@ -21,15 +21,15 @@ migrate-down:
     migrate -path migrations -database postgres://${COA_DB_USER}:${COA_DB_PASSWORD}@${COA_DB_HOST}/${COA_DB_NAME}?sslmode=${COA_DB_SSLMODE} down 1
 
 build:
-    go build github.com/haikoschol/cats-of-asia/cmd/coabot
-    go build github.com/haikoschol/cats-of-asia/cmd/ingest
-    go build github.com/haikoschol/cats-of-asia/cmd/api
+    go build -o dist github.com/haikoschol/cats-of-asia/cmd/coabot
+    go build -o dist github.com/haikoschol/cats-of-asia/cmd/ingest
+    go build -o dist github.com/haikoschol/cats-of-asia/cmd/api
 
 build-linux:
-    GOOS=linux GOARCH=amd64 go build github.com/haikoschol/cats-of-asia/cmd/coabot
+    GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/coabot
 
 # build the binary if necessary and deploy to hostname (which is assumed to run x86_64 Linux)
 deploy hostname: build-linux
     ssh -t {{hostname}} "sudo systemctl stop coabot"
-    scp coabot {{hostname}}:/usr/local/bin/coabot
+    scp dist/linux/coabot {{hostname}}:/usr/local/bin/coabot
     ssh -t {{hostname}} "sudo systemctl start coabot"
