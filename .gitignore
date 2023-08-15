@@ -1,7 +1,6 @@
 .idea
 .env
 cats-of-asia
-coabot
 google_api_credentials.json
 token.json
 state.json
