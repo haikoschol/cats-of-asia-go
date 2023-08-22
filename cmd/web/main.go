@@ -18,6 +18,7 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
 	_ "github.com/joho/godotenv/autoload"
@@ -36,6 +37,12 @@ var (
 	dbName     = os.Getenv("COA_DB_NAME")
 	dbUser     = os.Getenv("COA_DB_USER")
 	dbPassword = os.Getenv("COA_DB_PASSWORD")
+
+	//go:embed "static"
+	static embed.FS
+
+	//go:embed "templates/index.html"
+	indexHTML string
 )
 
 type image struct {
@@ -50,7 +57,7 @@ type image struct {
 }
 
 func main() {
-	api, err := newAPI(dbUser, dbPassword, dbHost, dbName, dbSSLmode)
+	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLmode)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,11 +66,13 @@ func main() {
 	mux.HandleFunc("/images", api.handleImages)
 	mux.HandleFunc("/images/", api.handleGetImage)
 
+	mux.Handle("/static", http.FileServer(http.FS(static)))
+
 	log.Print("Starting server on :4000")
 	log.Fatal(http.ListenAndServe(":4000", mux))
 }
 
-func (a *api) handleImages(w http.ResponseWriter, r *http.Request) {
+func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -81,7 +90,7 @@ func (a *api) handleImages(w http.ResponseWriter, r *http.Request) {
 	FROM images AS i
 	LEFT JOIN locations AS l ON i.id = l.image_id;`
 
-	rows, err := a.db.Query(sql)
+	rows, err := app.db.Query(sql)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -123,7 +132,7 @@ func (a *api) handleImages(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) handleGetImage(w http.ResponseWriter, r *http.Request) {
+func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -135,7 +144,7 @@ func (a *api) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row := a.db.QueryRow(`SELECT path FROM images WHERE id = $1;`, id)
+	row := app.db.QueryRow(`SELECT path FROM images WHERE id = $1;`, id)
 	var imgPath string
 	if err := row.Scan(&imgPath); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -157,18 +166,18 @@ func (a *api) handleGetImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type api struct {
+type webApp struct {
 	db *sql.DB
 }
 
-func newAPI(dbUser, dbPassword, dbHost, dbName, dbSSLmode string) (*api, error) {
+func newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLmode string) (*webApp, error) {
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbName, dbSSLmode)
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		return nil, err
 	}
 
-	return &api{db}, nil
+	return &webApp{db}, nil
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
