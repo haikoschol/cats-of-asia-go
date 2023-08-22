@@ -23,7 +23,7 @@ migrate-down:
 build:
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/coabot
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/ingest
-    go build -o dist github.com/haikoschol/cats-of-asia/cmd/api
+    go build -o dist github.com/haikoschol/cats-of-asia/cmd/web
 
 build-linux:
     GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/coabot
