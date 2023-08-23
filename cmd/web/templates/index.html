@@ -1,0 +1,75 @@
+<!--// Copyright (C) 2023 Haiko Schol-->
+<!--// SPDX-License-Identifier: GPL-3.0-or-later-->
+
+<!--// This program is free software: you can redistribute it and/or modify-->
+<!--// it under the terms of the GNU General Public License as published by-->
+<!--// the Free Software Foundation, either version 3 of the License, or-->
+<!--// (at your option) any later version.-->
+
+<!--// This program is distributed in the hope that it will be useful,-->
+<!--// but WITHOUT ANY WARRANTY; without even the implied warranty of-->
+<!--// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the-->
+<!--// GNU General Public License for more details.-->
+
+<!--// You should have received a copy of the GNU General Public License-->
+<!--// along with this program. If not, see <https://www.gnu.org/licenses/>.-->
+<!doctype html>
+<html lang="en">
+<head>
+    <title>Cats Of Asia</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+
+    <link rel="stylesheet" href="static/leaflet.css"
+          integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="/>
+
+    <script src="static/leaflet.js"
+            integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="></script>
+
+    <style>
+        #cattos {
+            width: 100%;
+            height: 800px;
+        }
+        .leaflet-popup-content img {
+            max-width: 100%;
+            max-height: 100%;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+<div id="cattos"></div>
+<script>
+    function makePopup(imgID, date, city, country) {
+        const location = city ? `${city}, ${country}` : country;
+
+        return `
+                <a href="images/${imgID}"><img src="images/${imgID}" alt="a photo of one or more cats"/></a>
+                Taken on ${date} in ${location}
+            `
+    }
+
+    const accessToken = '{{.access_token}}';
+    const m = L.map('cattos').setView([{{.startLatitude}}, {{.startLongitude}}], 15);
+    L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${accessToken}`, {
+        maxZoom: 25,
+        id: 'mapbox/streets-v11',
+        tileSize: 512,
+        zoomOffset: -1
+    }).addTo(m);
+
+    {{range .rows}}
+    L.circle([{{.Latitude}}, {{.Longitude}}], {
+        color: 'red',
+        radius: 5,
+    }).bindPopup(
+        makePopup('{{.ID}}', '{{.Timestamp.Format "02 Jan 2006"}}', '{{.City}}', '{{.Country}}')
+    ).addTo(m);
+    {{end}}
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -32,17 +33,19 @@ import (
 )
 
 var (
-	dbHost     = os.Getenv("COA_DB_HOST")
-	dbSSLmode  = os.Getenv("COA_DB_SSLMODE")
-	dbName     = os.Getenv("COA_DB_NAME")
-	dbUser     = os.Getenv("COA_DB_USER")
-	dbPassword = os.Getenv("COA_DB_PASSWORD")
+	dbHost            = os.Getenv("COA_DB_HOST")
+	dbSSLmode         = os.Getenv("COA_DB_SSLMODE")
+	dbName            = os.Getenv("COA_DB_NAME")
+	dbUser            = os.Getenv("COA_DB_USER")
+	dbPassword        = os.Getenv("COA_DB_PASSWORD")
+	mapboxAccessToken = os.Getenv("COA_MAPBOX_ACCESS_TOKEN")
 
 	//go:embed "static"
 	static embed.FS
 
 	//go:embed "templates/index.html"
-	indexHTML string
+	indexHTML     string
+	indexTemplate = template.Must(template.New("cattos").Parse(indexHTML))
 )
 
 type image struct {
@@ -57,6 +60,10 @@ type image struct {
 }
 
 func main() {
+	if mapboxAccessToken == "" {
+		log.Fatal("env var COA_MAPBOX_ACCESS_TOKEN not set")
+	}
+
 	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLmode)
 	if err != nil {
 		log.Fatal(err)
@@ -66,10 +73,43 @@ func main() {
 	mux.HandleFunc("/images", api.handleImages)
 	mux.HandleFunc("/images/", api.handleGetImage)
 
-	mux.Handle("/static", http.FileServer(http.FS(static)))
+	mux.Handle("/static/", http.FileServer(http.FS(static)))
+	mux.HandleFunc("/", api.handleIndex)
 
 	log.Print("Starting server on :4000")
 	log.Fatal(http.ListenAndServe(":4000", mux))
+}
+
+func (app *webApp) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if r.URL.Path != "/" {
+		serve404(w)
+		return
+	}
+
+	images, err := fetchImages(app.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"access_token":   mapboxAccessToken,
+		"startLatitude":  images[0].Latitude, // TODO find better values for these
+		"startLongitude": images[0].Longitude,
+		"rows":           images,
+	}
+
+	w.Header().Add("Content-Type", "text/html")
+
+	if err := indexTemplate.Execute(w, data); err != nil {
+		log.Println("failed to render index template:", err)
+		return
+	}
 }
 
 func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
@@ -78,44 +118,8 @@ func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sql := `SELECT 
-		i.id,
-		i.path,
-		i.timestamp,
-		i.tz_location,
-		i.latitude,
-		i.longitude,
-		l.city,
-		l.country
-	FROM images AS i
-	LEFT JOIN locations AS l ON i.id = l.image_id;`
-
-	rows, err := app.db.Query(sql)
+	images, err := fetchImages(app.db)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	var images []image
-	for rows.Next() {
-		var img image
-		err := rows.Scan(&img.ID, &img.Path, &img.Timestamp, &img.tzLocation, &img.Latitude, &img.Longitude, &img.City, &img.Country)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		loc, err := time.LoadLocation(img.tzLocation)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		img.Timestamp = img.Timestamp.In(loc)
-		images = append(images, img)
-	}
-
-	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -147,6 +151,7 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 	row := app.db.QueryRow(`SELECT path FROM images WHERE id = $1;`, id)
 	var imgPath string
 	if err := row.Scan(&imgPath); err != nil {
+		// TODO send 404 if row not found
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -194,4 +199,59 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	if _, err := w.Write(b); err != nil {
 		log.Println("failed writing http error response:", err)
 	}
+}
+
+// TODO send html with the image instead and include credit and link to https://http.cat/
+func serve404(w http.ResponseWriter) {
+	f, err := static.Open("static/404.jpg")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Add("Content-Type", "image/jpeg") // TODO support more image formats and video
+
+	if _, err := io.Copy(w, f); err != nil {
+		log.Println("failed sending image in http response:", err)
+		return
+	}
+}
+
+func fetchImages(db *sql.DB) ([]image, error) {
+	query := `SELECT 
+		i.id,
+		i.path,
+		i.timestamp,
+		i.tz_location,
+		i.latitude,
+		i.longitude,
+		l.city,
+		l.country
+	FROM images AS i
+	LEFT JOIN locations AS l ON i.id = l.image_id;`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+
+	var images []image
+	for rows.Next() {
+		var img image
+		err := rows.Scan(&img.ID, &img.Path, &img.Timestamp, &img.tzLocation, &img.Latitude, &img.Longitude, &img.City, &img.Country)
+		if err != nil {
+			return nil, err
+		}
+
+		loc, err := time.LoadLocation(img.tzLocation)
+		if err != nil {
+			return nil, err
+		}
+
+		img.Timestamp = img.Timestamp.In(loc)
+		images = append(images, img)
+	}
+
+	return images, rows.Err()
 }
