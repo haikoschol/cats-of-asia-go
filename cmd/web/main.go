@@ -41,7 +41,8 @@ var (
 	mapboxAccessToken = os.Getenv("COA_MAPBOX_ACCESS_TOKEN")
 
 	//go:embed "static"
-	static embed.FS
+	staticEmbed embed.FS
+	staticFs    http.FileSystem = http.FS(staticEmbed)
 
 	//go:embed "templates/index.html"
 	indexHTML     string
@@ -73,7 +74,7 @@ func main() {
 	mux.HandleFunc("/images", api.handleImages)
 	mux.HandleFunc("/images/", api.handleGetImage)
 
-	mux.Handle("/static/", http.FileServer(http.FS(static)))
+	mux.Handle("/static/", http.FileServer(staticFs))
 	mux.HandleFunc("/", api.handleIndex)
 
 	log.Print("Starting server on :4000")
@@ -203,7 +204,7 @@ func writeError(w http.ResponseWriter, status int, err error) {
 
 // TODO send html with the image instead and include credit and link to https://http.cat/
 func serve404(w http.ResponseWriter) {
-	f, err := static.Open("static/404.jpg")
+	f, err := staticEmbed.Open("static/404.jpg")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

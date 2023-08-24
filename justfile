@@ -20,23 +20,26 @@ migrate:
 migrate-down:
     migrate -path migrations -database postgres://${COA_DB_USER}:${COA_DB_PASSWORD}@${COA_DB_HOST}/${COA_DB_NAME}?sslmode=${COA_DB_SSLMODE} down 1
 
-build-bot:
+build:
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/coabot
-
-build-web:
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/ingest
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/web
 
+dev:
+    go build -o dist -tags dev github.com/haikoschol/cats-of-asia/cmd/web
+    dist/web
+
 # build the bot binary and deploy to hostname (which is assumed to run x86_64 Linux)
-deploy-bot hostname:
+deploy-bot hostname="catsof.asia":
+    ssh -t {{hostname}} "sudo systemctl stop coabot"
     GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/coabot
     scp dist/linux/coabot {{hostname}}:/usr/local/bin/coabot
-    ssh -t {{hostname}} "sudo systemctl restart coabot"
+    ssh -t {{hostname}} "sudo systemctl start coabot"
 
-#    ssh -t {{hostname}} "sudo systemctl stop coaweb"
 # build the ingest and web app binaries and deploy to hostname (which is assumed to run x86_64 Linux)
-deploy-web hostname:
+deploy-web hostname="catsof.asia":
     GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/ingest
     GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/web
+    ssh -t {{hostname}} "sudo systemctl stop coaweb"
     scp dist/linux/{ingest,web} {{hostname}}:/usr/local/bin/
-    ssh -t {{hostname}} "sudo systemctl restart coaweb"
+    ssh -t {{hostname}} "sudo systemctl start coaweb"
