@@ -16,25 +16,29 @@ function formatLocation(img) {
     return city ? `${city}, ${country}` : country
 }
 
-function addCircle(img, map) {
-    const circle = L.circle([img.latitude, img.longitude], {color: 'red', radius: defaultRadius});
+function addCircle(img, map, radius) {
+    const circle = L.circle([img.latitude, img.longitude], {color: 'red', radius: radius});
     circle.bindPopup(makePopupContent(img));
     circle.addTo(map);
     return circle;
 }
 
-function updateCircleRadii(circles, zoomLevel) {
+function calculateRadius(zoomLevel) {
     let radius = defaultRadius;
     if (zoomLevel >= 17) {
         radius -= (zoomLevel % 16) * 2;
     }
-    radius = Math.max(radius, 1);
+    return Math.max(radius, 1);
+}
 
+function updateCircleRadii(circles, zoomLevel) {
+    const radius = calculateRadius(zoomLevel);
     circles.forEach(c => c.setRadius(radius));
 }
 
-function init(divId, accessToken, startLatitude, startLongitude) {
-    map = L.map(divId).setView([startLatitude, startLongitude], defaultZoomLevel);
+async function init(divId, accessToken, startLatitude, startLongitude) {
+    const {latitude, longitude, zoomLevel} = readStorage(startLatitude, startLongitude)
+    map = L.map(divId).setView([latitude, longitude], zoomLevel);
 
     L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${accessToken}`, {
         maxZoom: 22,
@@ -43,14 +47,19 @@ function init(divId, accessToken, startLatitude, startLongitude) {
         zoomOffset: -1
     }).addTo(map);
 
-    fetch('/images/')
-        .then(response => response.json()
-            .then(d => {
-                images = d
-                circles = images.map(img => addCircle(img, map));
-                map.on('zoomend', () => updateCircleRadii(circles, map.getZoom()));
-                initPlaces(images, map);
-            }));
+    const response = await fetch('/images/');
+    images = await response.json();
+
+    const radius = calculateRadius(map.getZoom());
+    circles = images.map(img => addCircle(img, map, radius));
+
+    map.on('zoomend', () => {
+        updateCircleRadii(circles, map.getZoom());
+        updateStorage();
+    });
+
+    map.on('moveend', () => updateStorage());
+    initPlaces(images, map);
 }
 
 function initPlaces(images, map) {
@@ -64,15 +73,34 @@ function initPlaces(images, map) {
         const a = document.createElement('a');
         const {latitude, longitude} = places[label];
 
-        console.log(`${label}: ${latitude} ${longitude}`);
-
         a.innerText = label;
         a.onclick = () => {
             document.getElementById('placesDropdown').removeAttribute('open');
             map.setView([latitude, longitude], defaultZoomLevel);
+            updateStorage();
         }
 
         li.appendChild(a);
         placesUl.appendChild(li);
     }
+}
+
+function readStorage(startLatitude, startLongitude) {
+    const lsLat = localStorage.getItem('latitude')
+    const lsLng = localStorage.getItem('longitude')
+    const lsZoom = localStorage.getItem('zoomLevel');
+
+    return {
+        'latitude': lsLat ? Number(lsLat) : startLatitude,
+        'longitude': lsLng ? Number(lsLng) : startLongitude,
+        'zoomLevel': lsZoom ? Number(lsZoom) : defaultZoomLevel,
+    };
+}
+
+function updateStorage() {
+    const {lat, lng} = map.getCenter();
+
+    localStorage.setItem('latitude', lat);
+    localStorage.setItem('longitude', lng);
+    localStorage.setItem('zoomLevel', map.getZoom());
 }
