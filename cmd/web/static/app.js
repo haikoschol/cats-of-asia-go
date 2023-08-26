@@ -1,13 +1,19 @@
+const defaultZoomLevel = 15;
 const defaultRadius = 12;
 let [images, circles, map] = [[], [], null];
 
 function makePopupContent(img) {
-    const {id, city, country, timestamp} = img;
+    const {id, timestamp} = img;
     const date = new Date(timestamp).toDateString();
-    const location = city ? `${city}, ${country}` : country;
+    const location = formatLocation(img);
 
     return `<a href="images/${id}"><img src="images/${id}" alt="a photo of one or more cats"/></a>
         Taken on ${date} in ${location}`;
+}
+
+function formatLocation(img) {
+    const {city, country} = img;
+    return city ? `${city}, ${country}` : country
 }
 
 function addCircle(img, map) {
@@ -28,7 +34,7 @@ function updateCircleRadii(circles, zoomLevel) {
 }
 
 function init(divId, accessToken, startLatitude, startLongitude) {
-    map = L.map(divId).setView([startLatitude, startLongitude], 15);
+    map = L.map(divId).setView([startLatitude, startLongitude], defaultZoomLevel);
 
     L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${accessToken}`, {
         maxZoom: 22,
@@ -43,5 +49,30 @@ function init(divId, accessToken, startLatitude, startLongitude) {
                 images = d
                 circles = images.map(img => addCircle(img, map));
                 map.on('zoomend', () => updateCircleRadii(circles, map.getZoom()));
+                initPlaces(images, map);
             }));
+}
+
+function initPlaces(images, map) {
+    const placesUl = document.getElementById('placesUl');
+    const places = {};
+
+    images.forEach(img => places[formatLocation(img)] = img);
+
+    for (const label in places) {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        const {latitude, longitude} = places[label];
+
+        console.log(`${label}: ${latitude} ${longitude}`);
+
+        a.innerText = label;
+        a.onclick = () => {
+            document.getElementById('placesDropdown').removeAttribute('open');
+            map.setView([latitude, longitude], defaultZoomLevel);
+        }
+
+        li.appendChild(a);
+        placesUl.appendChild(li);
+    }
 }
