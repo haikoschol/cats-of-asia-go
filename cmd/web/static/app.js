@@ -135,14 +135,14 @@ function setMapView(map, images) {
     updateCircleRadii(images, zoomLevel);
 }
 
-// TODO sort places list alphabetically
 function initPlaces(images, map) {
     const placesUl = document.getElementById('placesUl');
     const places = {};
 
     images.forEach(img => places[formatLocation(img)] = img);
+    const sorted = Object.keys(places).sort();
 
-    for (const label in places) {
+    for (const label of sorted) {
         const li = document.createElement('li');
         const a = document.createElement('a');
         const {latitude, longitude} = places[label];
