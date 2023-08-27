@@ -92,17 +92,8 @@ func (app *webApp) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	images, err := fetchImages(app.db)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
 	data := map[string]interface{}{
-		"access_token":   mapboxAccessToken,
-		"startLatitude":  images[0].Latitude, // TODO find better values for these
-		"startLongitude": images[0].Longitude,
-		"rows":           images,
+		"access_token": mapboxAccessToken,
 	}
 
 	w.Header().Add("Content-Type", "text/html")
