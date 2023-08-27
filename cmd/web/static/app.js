@@ -93,12 +93,13 @@ async function init(divId, accessToken) {
     const response = await fetch('/images/');
     images = await response.json();
 
-    const radius = calculateRadius(map.getZoom());
+    const zoomLevel = map.getZoom();
+    const radius = calculateRadius(zoomLevel);
     images.forEach(img => img['circle'] = addCircle(img, map, radius));
     setMapView(map, images);
 
     map.on('zoomend', () => {
-        updateCircleRadii(images, map.getZoom());
+        updateCircleRadii(images, zoomLevel);
         updateStorage();
     });
 
@@ -109,7 +110,7 @@ async function init(divId, accessToken) {
 // If url params with image id and optional zoom level are present, center map on that, otherwise try last location
 // from local storage and fall back to default values (coords of first image).
 function setMapView(map, images) {
-    let zoomLevel = defaultZoomLevel;
+    let {latitude, longitude, zoomLevel} = readStorage(images[0].latitude, images[0].longitude)
 
     const urlParams = new URLSearchParams(window.location.search);
     const imageId = Number(urlParams.get('imageId'));
@@ -128,7 +129,6 @@ function setMapView(map, images) {
         map.setView([img.latitude, img.longitude], zoomLevel);
         img.circle.openPopup();
     } else {
-        let {latitude, longitude, zoomLevel} = readStorage(images[0].latitude, images[0].longitude)
         map.setView([latitude, longitude], zoomLevel);
     }
 
