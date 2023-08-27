@@ -94,13 +94,12 @@ async function init(divId, accessToken) {
     const response = await fetch('/images/');
     images = await response.json();
 
-    const zoomLevel = map.getZoom();
-    const radius = calculateRadius(zoomLevel);
+    const radius = calculateRadius(map.getZoom());
     images.forEach(img => img['circle'] = addCircle(img, map, radius));
     setMapView(map, images);
 
     map.on('zoomend', () => {
-        updateCircleRadii(images, zoomLevel);
+        updateCircleRadii(images, map.getZoom());
         updateStorage();
     });
 
