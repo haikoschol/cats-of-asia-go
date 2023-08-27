@@ -29,11 +29,12 @@ function makePopupContent(image, map) {
 }
 
 function makeShareButton(image, map) {
-    const protocol = window.location.hostname === 'localhost' ? 'http' : 'https';
-    const url = `${protocol}://${window.location.hostname}${window.location.pathname}?imageId=${image.id}&zoomLevel=${map.getZoom()}`;
     const icon = makeImageLink('#', 'static/share.png', 'share');
 
     icon.onclick = () => {
+        const protocol = window.location.hostname === 'localhost' ? 'http' : 'https';
+        const url = `${protocol}://${window.location.hostname}${window.location.pathname}?imageId=${image.id}&zoomLevel=${map.getZoom()}`;
+
         navigator.share({
             title: `${document.title} #${image.id}`,
             text: 'Check out this cat!',
