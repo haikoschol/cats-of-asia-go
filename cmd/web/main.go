@@ -148,6 +148,12 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	stats, err := os.Stat(imgPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("unable to stat file at %s: %w", imgPath, err))
+		return
+	}
+
 	f, err := os.Open(imgPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("unable to open file at %s: %w", imgPath, err))
@@ -156,6 +162,7 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	w.Header().Add("Content-Type", "image/jpeg") // TODO support more image formats and video
+	w.Header().Add("Content-Length", fmt.Sprintf("%d", stats.Size()))
 
 	if _, err := io.Copy(w, f); err != nil {
 		log.Println("failed sending image in http response:", err)
