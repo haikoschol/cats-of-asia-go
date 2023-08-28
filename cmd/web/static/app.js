@@ -31,7 +31,8 @@ function makePopupContent(image, map) {
 function makeShareButton(image, map) {
     const icon = makeImageLink('#', 'static/share.png', 'share');
 
-    icon.onclick = () => {
+    icon.onclick = (e) => {
+        e.preventDefault();
         const protocol = window.location.hostname === 'localhost' ? 'http' : 'https';
         const url = `${protocol}://${window.location.hostname}${window.location.pathname}?imageId=${image.id}&zoomLevel=${map.getZoom()}`;
 
@@ -64,7 +65,10 @@ function formatLocation(img) {
 
 function addCircle(img, map, radius) {
     const circle = L.circle([img.latitude, img.longitude], {color: 'red', radius: radius});
-    const popup = circle.bindPopup(makePopupContent(img, map));
+
+    // Passing a function that returns dom elements in order to lazy load the popup images.
+    const popup = circle.bindPopup(() => makePopupContent(img, map));
+
     circle.addTo(map);
     return circle;
 }
