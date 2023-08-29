@@ -166,6 +166,7 @@ function setMapView(map, images) {
 
         map.setView([img.latitude, img.longitude], zoomLevel);
         img.circle.openPopup();
+        updateStorage();
     } else {
         map.setView([latitude, longitude], zoomLevel);
     }
