@@ -64,7 +64,8 @@ function formatLocation(img) {
 }
 
 function addCircle(img, map, radius) {
-    const circle = L.circle([img.latitude, img.longitude], {color: 'red', radius: radius});
+    const color = img.randomized ? 'blue' : 'red';
+    const circle = L.circle([img.latitude, img.longitude], {color: color, radius: radius});
 
     // Passing a function that returns dom elements in order to lazy load the popup images.
     const popup = circle.bindPopup(() => makePopupContent(img, map));
@@ -86,6 +87,38 @@ function updateCircleRadii(images, zoomLevel) {
     images.forEach(img => img.circle.setRadius(radius));
 }
 
+// When multiple images have the same coordinates, spread them out so the markers won't overlap completely.
+function adjustCoordinates(images) {
+    const imgsByCoords = {};
+
+    images.forEach(img => {
+        img['randomized'] = false;
+        const coords = `${img.latitude},${img.longitude}`;
+        const imgsAt = imgsByCoords[coords] || [];
+        imgsAt.push(img);
+        imgsByCoords[coords] = imgsAt;
+    });
+
+    for (let c in imgsByCoords) {
+        const imgsAt = imgsByCoords[c];
+        const count = imgsAt.length;
+        if (count < 2) {
+            continue;
+        }
+
+        imgsAt.forEach(img => {
+            img.latitude = randomizeCoordinate(img.latitude);
+            img.longitude = randomizeCoordinate(img.longitude);
+            img.randomized = true;
+        });
+    }
+}
+
+function randomizeCoordinate(coord) {
+    const delta = Math.random() / 2000;
+    return Math.random() > 0.5 ? coord + delta : coord - delta;
+}
+
 async function init(divId, accessToken) {
     map = L.map(divId);
     L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${accessToken}`, {
@@ -97,6 +130,7 @@ async function init(divId, accessToken) {
 
     const response = await fetch('/images/');
     images = await response.json();
+    adjustCoordinates(images);
 
     const radius = calculateRadius(map.getZoom());
     images.forEach(img => img['circle'] = addCircle(img, map, radius));
