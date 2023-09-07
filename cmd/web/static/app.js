@@ -19,32 +19,19 @@ function makePopupContent(image, map) {
         const footer = document.createElement('div');
         footer.className = 'popup-footer';
         footer.appendChild(description);
-        footer.appendChild(makeShareButton(image, map));
+
+        const shareButton = makeIconButton(
+            'static/share.svg',
+            'share',
+            () => shareCatto(id, map.getZoom()));
+
+        footer.appendChild(shareButton);
         outer.appendChild(footer);
     } else {
         outer.appendChild(description);
     }
 
     return outer;
-}
-
-function makeShareButton(image, map) {
-    const icon = makeImageLink('#', 'static/share.png', 'share');
-
-    icon.onclick = (e) => {
-        e.preventDefault();
-        const protocol = window.location.hostname === 'localhost' ? 'http' : 'https';
-        const url = `${protocol}://${window.location.hostname}${window.location.pathname}?imageId=${image.id}&zoomLevel=${map.getZoom()}`;
-
-        navigator.share({
-            title: `${document.title} #${image.id}`,
-            text: 'Check out this cat!',
-            url: url,
-        })
-            .then(() => console.log('catto sharing is catto caring'))
-            .catch(error => console.log('error sharing:', error));
-    }
-    return icon;
 }
 
 function makeImageLink(href, src, alt) {
@@ -58,17 +45,46 @@ function makeImageLink(href, src, alt) {
     return a;
 }
 
-function formatLocation(img) {
-    const {city, country} = img;
+function makeIconButton(icon, alt, onClick) {
+    const img = document.createElement('img');
+    img.className = 'icon';
+    img.src = icon;
+    img.alt = alt;
+
+    const button = document.createElement('button');
+
+    if (onClick) {
+        button.onclick = onClick;
+    }
+
+    button.appendChild(img);
+    return button;
+}
+
+function shareCatto(imageId, zoomLevel) {
+    const protocol = window.location.hostname === 'localhost' ? 'http' : 'https';
+    const url = `${protocol}://${window.location.hostname}${window.location.pathname}?imageId=${imageId}&zoomLevel=${zoomLevel}`;
+
+    navigator.share({
+        title: `${document.title} #${imageId}`,
+        text: 'Check out this cat!',
+        url: url,
+    })
+        .then(() => console.log('catto sharing is catto caring'))
+        .catch(error => console.log('error sharing:', error));
+}
+
+function formatLocation(image) {
+    const {city, country} = image;
     return city ? `${city}, ${country}` : country
 }
 
-function addCircle(img, map, radius) {
-    const color = img.randomized ? 'blue' : 'red';
-    const circle = L.circle([img.latitude, img.longitude], {color: color, radius: radius});
+function addCircle(image, map, radius) {
+    const color = image.randomized ? 'blue' : 'red';
+    const circle = L.circle([image.latitude, image.longitude], {color: color, radius: radius});
 
     // Passing a function that returns dom elements in order to lazy load the popup images.
-    const popup = circle.bindPopup(() => makePopupContent(img, map));
+    const popup = circle.bindPopup(() => makePopupContent(image, map));
 
     circle.addTo(map);
     return circle;
