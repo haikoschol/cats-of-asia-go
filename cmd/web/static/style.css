@@ -42,9 +42,21 @@ body {
 }
 
 .popup-footer button {
-    flex-basis: 20%;
-    flex-shrink: 10;
     margin: 0;
     padding: 0;
     border: 0;
+    background-color: white;
+    width: 2em;
+    height: 2em;
+}
+
+:focus:not(:focus-visible) {
+    outline: 0;
+    box-shadow: none;
+}
+
+.icon {
+    display: block;
+    width: 2em;
+    height: 2em;
 }
