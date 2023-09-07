@@ -1,6 +1,24 @@
+// Copyright (C) 2023 Haiko Schol
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 const defaultZoomLevel = 15;
 const maxZoomLevel = 22;
 const defaultRadius = 12;
+
+let favorites = null;
 let images = [];
 let map = null;
 
@@ -10,27 +28,29 @@ function makePopupContent(image, map) {
     const location = formatLocation(image);
     const outer = document.createElement('div');
     const catImage = makeImageLink(`images/${id}`, `images/${id}`, 'a photo of one or more cats');
-    const description = document.createElement('div');
-
-    description.innerText = `Taken on ${date} in ${location}`;
     outer.appendChild(catImage);
 
-    if (navigator.share) {
-        const footer = document.createElement('div');
-        footer.className = 'popup-footer';
-        footer.appendChild(description);
+    const footer = document.createElement('div');
+    footer.className = 'popup-footer';
 
-        const shareButton = makeIconButton(
+    const description = document.createElement('div');
+    description.innerText = `Taken on ${date} in ${location}`;
+    footer.appendChild(description);
+
+    const favButton = makeFavoriteButton(id);
+    favButton.mount(footer);
+
+    if (navigator.share) {
+        const shareButton = new IconButton(
             'static/share.svg',
             'share',
-            () => shareCatto(id, map.getZoom()));
+            () => shareCatto(id, map.getZoom())
+        );
 
-        footer.appendChild(shareButton);
-        outer.appendChild(footer);
-    } else {
-        outer.appendChild(description);
+        shareButton.mount(footer);
     }
 
+    outer.appendChild(footer);
     return outer;
 }
 
@@ -45,20 +65,54 @@ function makeImageLink(href, src, alt) {
     return a;
 }
 
-function makeIconButton(icon, alt, onClick) {
-    const img = document.createElement('img');
-    img.className = 'icon';
-    img.src = icon;
-    img.alt = alt;
+function makeFavoriteButton(imageId) {
+    const icon = favorites.iconForStatus(imageId);
+    const favButton = new IconButton(icon, 'add/remove this cat to/from your favorites');
 
-    const button = document.createElement('button');
+    favButton.onclick = () => {
+        favorites.toggle(imageId);
+        favButton.src = favorites.iconForStatus(imageId);
+        setFavoritesNavVisibility();
+        favorites.write();
+    }
+    return favButton;
+}
 
-    if (onClick) {
-        button.onclick = onClick;
+class IconButton {
+    img;
+    button;
+
+    constructor(icon, alt, onClick) {
+        this.img = document.createElement('img');
+        this.img.className = 'icon';
+        this.img.src = icon;
+        this.img.alt = alt;
+
+        this.button = document.createElement('button');
+
+        if (onClick) {
+            this.button.onclick = onClick;
+        }
+
+        this.button.appendChild(this.img);
     }
 
-    button.appendChild(img);
-    return button;
+    set src(src) {
+        this.img.src = src;
+    }
+
+    set onclick(oc) {
+        this.button.onclick = oc;
+    }
+
+    mount(container) {
+        container.appendChild(this.button);
+    }
+}
+
+function setFavoritesNavVisibility() {
+    const navItem = document.getElementById('favoritesNavItem');
+    navItem.hidden = favorites.size === 0;
 }
 
 function shareCatto(imageId, zoomLevel) {
@@ -136,6 +190,8 @@ function randomizeCoordinate(coord) {
 }
 
 async function init(divId, accessToken) {
+    favorites = new FavoriteStore();
+
     map = L.map(divId);
     L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${accessToken}`, {
         maxZoom: maxZoomLevel,
@@ -154,17 +210,18 @@ async function init(divId, accessToken) {
 
     map.on('zoomend', () => {
         updateCircleRadii(images, map.getZoom());
-        updateStorage();
+        updateCurrentPosition(map);
     });
 
-    map.on('moveend', () => updateStorage());
+    map.on('moveend', () => updateCurrentPosition(map));
     initPlaces(images, map);
+    setFavoritesNavVisibility();
 }
 
 // If url params with image id and optional zoom level are present, center map on that, otherwise try last location
 // from local storage and fall back to default values (coords of first image).
 function setMapView(map, images) {
-    let {latitude, longitude, zoomLevel} = readStorage(images[0].latitude, images[0].longitude)
+    let {latitude, longitude, zoomLevel} = getCurrentPosition(images[0].latitude, images[0].longitude)
 
     const urlParams = new URLSearchParams(window.location.search);
     const imageId = Number(urlParams.get('imageId'));
@@ -182,7 +239,7 @@ function setMapView(map, images) {
 
         map.setView([img.latitude, img.longitude], zoomLevel);
         img.circle.openPopup();
-        updateStorage();
+        updateCurrentPosition(map);
     } else {
         map.setView([latitude, longitude], zoomLevel);
     }
@@ -206,7 +263,7 @@ function initPlaces(images, map) {
         a.onclick = () => {
             document.getElementById('placesDropdown').removeAttribute('open');
             map.setView([latitude, longitude], defaultZoomLevel);
-            updateStorage();
+            updateCurrentPosition(map);
         }
 
         li.appendChild(a);
@@ -214,7 +271,7 @@ function initPlaces(images, map) {
     }
 }
 
-function readStorage(startLatitude, startLongitude) {
+function getCurrentPosition(startLatitude, startLongitude) {
     const lsLat = localStorage.getItem('latitude')
     const lsLng = localStorage.getItem('longitude')
     const lsZoom = localStorage.getItem('zoomLevel');
@@ -226,7 +283,7 @@ function readStorage(startLatitude, startLongitude) {
     };
 }
 
-function updateStorage() {
+function updateCurrentPosition(map) {
     const {lat, lng} = map.getCenter();
 
     localStorage.setItem('latitude', lat);

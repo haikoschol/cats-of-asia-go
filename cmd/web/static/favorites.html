@@ -1,0 +1,113 @@
+<!-- Copyright (C) 2023 Haiko Schol
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.-->
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Cats Of Asia</title>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+  <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+
+  <link rel="stylesheet" href="pico.min.css">
+  <link rel="stylesheet" href="style.css">
+
+  <script src="common.js"></script>
+</head>
+<body>
+<main class="container-fluid">
+  <nav>
+    <ul>
+      <li><strong>Cats Of Asia</strong></li>
+<!--      Maybe enable filtering favorites by place-->
+<!--      <li>-->
+<!--        <details id="placesDropdown" role="list" style="z-index: 1000">-->
+<!--          <summary aria-haspopup="listbox" role="button">Places</summary>-->
+<!--          <ul id="placesUl" role="listbox">-->
+<!--          </ul>-->
+<!--        </details>-->
+<!--      </li>-->
+      <li>
+        <a href="/">Map</a>
+      </li>
+    </ul>
+  </nav>
+  <div id="noFavs" hidden="" style="display: flex; justify-content: center;">
+    <div>You don't have any favorites yet. Find some on the <a href="/">map</a>!</div>
+  </div>
+  <table id="favsTable"><tbody id="favs"></tbody></table>
+  <script>
+      const favorites = new FavoriteStore();
+      const favsTable = document.getElementById('favsTable');
+      const favs = document.getElementById('favs');
+
+      function addCell(row, imageId) {
+          const img = document.createElement('img');
+          img.src = `/images/${imageId}`;
+          img.alt = 'one of your favorite cats';
+
+          const div = document.createElement('div');
+          div.appendChild(img);
+          div.appendChild(makeRemoveButton(imageId));
+
+          const cell = row.insertCell();
+          cell.appendChild(div);
+      }
+
+      function makeRemoveButton(imageId) {
+          const button = document.createElement('button');
+          button.innerText = 'Remove from favorites';
+
+          button.onclick = () => {
+              favorites.toggle(imageId);
+              favorites.write();
+              clear();
+              render();
+          }
+          return button;
+      }
+
+      function renderFavorites() {
+          const favArray = favorites.toArray();
+          const numCols = 3;
+          for (let i = 0; i < favArray.length; i += numCols) {
+              const items = favArray.slice(i, i + numCols);
+              const row = favs.insertRow();
+              items.forEach(imgId => addCell(row, imgId));
+          }
+      }
+
+      function render() {
+          if (favorites.size === 0) {
+              favsTable.hidden = true;
+              document.getElementById('noFavs').hidden = false;
+          } else {
+              renderFavorites();
+          }
+      }
+
+      function clear() {
+          for (let i = 0; i < favs.rows.length; i++) {
+              favs.deleteRow(-1);
+          }
+      }
+
+      render();
+  </script>
+</main>
+</body>
+</html>
