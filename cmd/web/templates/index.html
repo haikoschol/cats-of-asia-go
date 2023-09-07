@@ -32,7 +32,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
   <script src="static/leaflet.js"
           integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="></script>
 
+  <script src="static/common.js"></script>
   <script src="static/app.js"></script>
+
+  <style>
+      body {
+          overflow: hidden;
+      }
+  </style>
 </head>
 <body>
 <main class="container-fluid">
@@ -45,6 +52,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
           <ul id="placesUl" role="listbox">
           </ul>
         </details>
+      </li>
+      <li id="favoritesNavItem" hidden="">
+        <a href="/static/favorites.html">Favorites</a>
       </li>
     </ul>
   </nav>
