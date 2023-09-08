@@ -27,14 +27,14 @@ function makePopupContent(image, map) {
     const date = new Date(timestamp).toDateString();
     const location = formatLocation(image);
     const outer = document.createElement('div');
-    const catImage = makeImageLink(`images/${id}`, `images/${id}`, 'a photo of one or more cats');
+    const catImage = makeImageLink(`images/${id}`, `images/${id}`, `photo #${id}, showing one or more cats`);
     outer.appendChild(catImage);
 
     const footer = document.createElement('div');
     footer.className = 'popup-footer';
 
     const description = document.createElement('div');
-    description.innerText = `Taken on ${date} in ${location}`;
+    description.innerText = `Photo #${id}. Taken on ${date} in ${location}`;
     footer.appendChild(description);
 
     const favButton = makeFavoriteButton(id);
