@@ -35,6 +35,10 @@ class FavoriteStore {
         return this.favSet.has(imageId);
     }
 
+    remove(imageId) {
+        this.favSet.delete(imageId);
+    }
+
     toggle(imageId) {
         if (this.favSet.has(imageId)) {
             this.favSet.delete(imageId);
