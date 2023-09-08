@@ -57,3 +57,14 @@
     width: 2em;
     height: 2em;
 }
+
+.fav-img {
+    max-width: 400px;
+}
+
+.fav-card {
+    max-width: fit-content;
+    float: left;
+    margin-top: 0;
+    margin-right: 2em;
+}

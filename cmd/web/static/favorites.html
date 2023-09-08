@@ -49,64 +49,62 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
   <div id="noFavs" hidden="" style="display: flex; justify-content: center;">
     <div>You don't have any favorites yet. Find some on the <a href="/">map</a>!</div>
   </div>
-  <table id="favsTable"><tbody id="favs"></tbody></table>
+  <div id="favsContainer"></div>
   <script>
       const favorites = new FavoriteStore();
-      const favsTable = document.getElementById('favsTable');
-      const favs = document.getElementById('favs');
 
-      function addCell(row, imageId) {
-          const img = document.createElement('img');
-          img.src = `/images/${imageId}`;
-          img.alt = 'one of your favorite cats';
-
-          const div = document.createElement('div');
-          div.appendChild(img);
-          div.appendChild(makeRemoveButton(imageId));
-
-          const cell = row.insertCell();
-          cell.appendChild(div);
-      }
-
-      function makeRemoveButton(imageId) {
+      function makeRemoveButton(imageId, container) {
           const button = document.createElement('button');
-          button.innerText = 'Remove from favorites';
+          button.innerText = `Remove photo #${imageId} from favorites`;
 
           button.onclick = () => {
-              favorites.toggle(imageId);
+              favorites.remove(imageId);
               favorites.write();
-              clear();
-              render();
+              container.remove();
+              updateVisibility();
           }
           return button;
       }
 
       function renderFavorites() {
-          const favArray = favorites.toArray();
-          const numCols = 3;
-          for (let i = 0; i < favArray.length; i += numCols) {
-              const items = favArray.slice(i, i + numCols);
-              const row = favs.insertRow();
-              items.forEach(imgId => addCell(row, imgId));
-          }
+          const favs = document.getElementById('favsContainer');
+
+          favorites.toArray().forEach(imageId => {
+              const img = document.createElement('img');
+              img.src = `/images/${imageId}`;
+              img.alt = `cat photo #${imageId}`;
+              img.className = 'fav-img';
+
+              const a = document.createElement('a');
+              a.href = `/images/${imageId}`
+              a.appendChild(img);
+
+              const card = document.createElement('article');
+              card.className = 'fav-card';
+              const footer = document.createElement('footer');
+              footer.appendChild(makeRemoveButton(imageId, card));
+
+              card.appendChild(a);
+              card.appendChild(footer);
+              favs.appendChild(card);
+          });
       }
 
-      function render() {
+      function updateVisibility() {
+          const noFavs = document.getElementById('noFavs');
+          const favs = document.getElementById('favsContainer');
+
           if (favorites.size === 0) {
-              favsTable.hidden = true;
-              document.getElementById('noFavs').hidden = false;
+              favs.hidden = true;
+              noFavs.hidden = false;
           } else {
-              renderFavorites();
+              favs.hidden = false;
+              noFavs.hidden = true;
           }
       }
 
-      function clear() {
-          for (let i = 0; i < favs.rows.length; i++) {
-              favs.deleteRow(-1);
-          }
-      }
-
-      render();
+      updateVisibility();
+      renderFavorites();
   </script>
 </main>
 </body>
