@@ -12,10 +12,9 @@ jobs:
       - id: govulncheck
         uses: golang/govulncheck-action@v1
         with:
-          go-version-input: '1.21'
+          go-version-input: '1.21.1'
 
       - uses: ko-build/setup-ko@v0.6
       - run: ko build --bare ./cmd/coabot
         env:
           KO_DOCKER_REPO: ghcr.io/haikoschol/cats-of-asia
-
