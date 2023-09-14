@@ -20,17 +20,32 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/lib/pq"
 	"github.com/rwcarlsen/goexif/exif"
+	"golang.org/x/image/draw"
 	"googlemaps.github.io/maps"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"log"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"time"
+)
+
+const (
+	imageWidthSmall   = 300
+	imageWidthMedium  = 600
+	imageSuffixSmall  = "-small"
+	imageSuffixMedium = "-medium"
+	verbose           = true // TODO make cli flag
 )
 
 var (
@@ -44,7 +59,9 @@ var (
 )
 
 type imageWithLoc struct {
-	path       string
+	pathLarge  string
+	pathMedium string
+	pathSmall  string
 	sha256     string
 	timestamp  time.Time
 	tzLocation string
@@ -74,6 +91,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	images, err = resizeImages(images)
+	if err != nil {
+		log.Fatalf("error while resizing images: %v\n", err)
+	}
+
 	mapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
 	if err != nil {
 		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
@@ -89,18 +111,22 @@ func main() {
 		os.Exit(0)
 	}
 
-	imagesWithLoc, err := reverseGeocode(images, mapsClient)
+	images, err = reverseGeocode(images, mapsClient)
 	if err != nil {
 		log.Fatalf("error while reverse geocoding: %v\n", err)
 	}
 
-	err = insertNewImages(imagesWithLoc, db)
+	err = insertNewImages(images, db)
 	if err != nil {
 		log.Fatalf("error while inserting new images into db: %v\n", err)
 	}
 }
 
 func collectFileInfo(dir string) ([]imageWithLoc, error) {
+	if verbose {
+		log.Printf("scanning directory %s...", dir)
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		log.Fatalf("os.ReadDir(): %v\n", err)
@@ -109,7 +135,14 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 	var images []imageWithLoc
 
 	for _, entry := range entries {
-		if !coabot.IsSupportedMedia(entry.Name()) {
+		name := entry.Name()
+		if !coabot.IsSupportedMedia(name) {
+			continue
+		}
+
+		// skip resized images that may have been created in a previous run
+		basename := strings.TrimSuffix(name, filepath.Ext(name))
+		if strings.HasSuffix(basename, imageSuffixSmall) || strings.HasSuffix(basename, imageSuffixMedium) {
 			continue
 		}
 
@@ -147,7 +180,7 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 		}
 
 		image := imageWithLoc{
-			path:       abspath,
+			pathLarge:  abspath,
 			sha256:     hash,
 			latitude:   latitude,
 			longitude:  longitude,
@@ -160,6 +193,9 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 		images = append(images, image)
 	}
 
+	if verbose {
+		log.Println("done")
+	}
 	return images, nil
 }
 
@@ -170,12 +206,12 @@ func removeKnownImages(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error
 		hashes = append(hashes, img.sha256)
 	}
 
-	rows, err := db.Query(`SELECT path, sha256 FROM images WHERE sha256 = ANY($1)`, pq.Array(hashes))
+	rows, err := db.Query(`SELECT path_large, sha256 FROM images WHERE sha256 = ANY($1)`, pq.Array(hashes))
 	if err != nil {
 		return nil, err
 	}
 
-	var knownImages map[string]string
+	knownImages := make(map[string]string)
 
 	for rows.Next() {
 		var imgPath, hash string
@@ -191,7 +227,9 @@ func removeKnownImages(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error
 	for _, img := range images {
 		imgPath, ok := knownImages[img.sha256]
 		if ok {
-			log.Printf("file %s already exists in the database as %s\n", img.path, imgPath)
+			if verbose {
+				log.Printf("file %s already exists in the database as %s\n", img.pathLarge, imgPath)
+			}
 			continue
 		}
 
@@ -202,6 +240,10 @@ func removeKnownImages(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error
 }
 
 func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, error) {
+	if verbose {
+		log.Println("fixing timezones...")
+	}
+
 	var fixed []imageWithLoc
 
 	for _, img := range images {
@@ -221,6 +263,9 @@ func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, e
 		fixed = append(fixed, fixedImg)
 	}
 
+	if verbose {
+		log.Println("done")
+	}
 	return fixed, nil
 }
 
@@ -248,6 +293,10 @@ func getLocation(t time.Time, lat float64, lng float64, client *maps.Client) (*t
 }
 
 func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, error) {
+	if verbose {
+		log.Println("reverse geocoding...")
+	}
+
 	var geocoded []imageWithLoc
 
 	for _, img := range images {
@@ -292,10 +341,130 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 		geocoded = append(geocoded, imgWithLoc)
 	}
 
+	if verbose {
+		log.Println("done")
+	}
 	return geocoded, nil
 }
 
+func resizeImages(images []imageWithLoc) ([]imageWithLoc, error) {
+	if verbose {
+		log.Println("resizing images...")
+	}
+
+	var resized []imageWithLoc
+
+	for _, img := range images {
+		imgWithResized := img
+		var err error
+
+		imgWithResized.pathSmall, err = resizeImage(img.pathLarge, imageSuffixSmall, imageWidthSmall)
+		if err != nil {
+			return nil, err
+		}
+
+		imgWithResized.pathMedium, err = resizeImage(img.pathLarge, imageSuffixMedium, imageWidthMedium)
+		if err != nil {
+			return nil, err
+		}
+
+		resized = append(resized, imgWithResized)
+	}
+
+	if verbose {
+		log.Println("done")
+	}
+	return resized, nil
+}
+
+func resizeImage(path, suffix string, width int) (string, error) {
+	ext := filepath.Ext(path)
+	withoutExt := strings.TrimSuffix(path, ext)
+	pathResized := fmt.Sprintf("%s%s%s", withoutExt, suffix, ext)
+
+	// make sure the resized file does not exist already and there is no directory with the same name
+	stats, err := os.Stat(pathResized)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err == nil && stats.IsDir() {
+		return "", fmt.Errorf("cannot write resized image to %s. a directory with that name already exists", pathResized)
+	}
+	// file already exists, nothing to do
+	if err == nil {
+		if verbose {
+			log.Printf("resized image file %s already exists\n", pathResized)
+		}
+		return pathResized, nil
+	}
+
+	src, err := decodeImage(path)
+	if err != nil {
+		return "", err
+	}
+
+	height := src.Bounds().Max.Y / (src.Bounds().Max.X / width)
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.CatmullRom.Scale(dst, dst.Rect, src, src.Bounds(), draw.Over, nil)
+
+	if err := encodeImage(dst, pathResized); err != nil {
+		return "", err
+	}
+
+	return pathResized, nil
+}
+
+func decodeImage(path string) (image.Image, error) {
+	input, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open file %s for resizing: %w", path, err)
+	}
+	defer func() {
+		if err := input.Close(); err != nil {
+			log.Printf("error closing file %s: %v\n", path, err)
+		}
+	}()
+
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg":
+		fallthrough
+	case ".jpeg":
+		return jpeg.Decode(input)
+	case ".png":
+		return png.Decode(input)
+	default:
+		return nil, fmt.Errorf("unable to determine image format for decoding %s", path)
+	}
+}
+
+func encodeImage(m image.Image, path string) error {
+	output, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("unable to create file for resized image at %s: %w", path, err)
+	}
+	defer func() {
+		if err := output.Close(); err != nil {
+			log.Printf("error closing file %s: %v\n", path, err)
+		}
+	}()
+
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg":
+		fallthrough
+	case ".jpeg":
+		return jpeg.Encode(output, m, &jpeg.Options{Quality: 100})
+	case ".png":
+		return png.Encode(output, m)
+	default:
+		return fmt.Errorf("unable to determine image format for encoding '%s'", path)
+	}
+}
+
 func insertNewImages(images []imageWithLoc, db *sql.DB) error {
+	if verbose {
+		log.Println("inserting images into db...")
+	}
+
 	for _, img := range images {
 		tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 		if err != nil {
@@ -303,8 +472,14 @@ func insertNewImages(images []imageWithLoc, db *sql.DB) error {
 		}
 
 		row := tx.QueryRow(
-			`INSERT INTO images(path, sha256, latitude, longitude, timestamp, tz_location) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-			img.path,
+			`INSERT INTO
+    			images(path_large, path_medium, path_small, sha256, latitude, longitude, timestamp, tz_location)
+			VALUES
+			    ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id`,
+			img.pathLarge,
+			img.pathMedium,
+			img.pathSmall,
 			img.sha256,
 			img.latitude,
 			img.longitude,
@@ -334,6 +509,10 @@ func insertNewImages(images []imageWithLoc, db *sql.DB) error {
 			return err
 		}
 	}
+
+	if verbose {
+		log.Println("done")
+	}
 	return nil
 }
 
@@ -345,7 +524,7 @@ func getImageDir() string {
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--help" || os.Args[1] == "-h" {
-			fmt.Printf("usage: %s <path> - directory to scan for new images (default: current directory)\n", os.Args[0])
+			fmt.Printf("usage: %s <pathLarge> - directory to scan for new images (default: current directory)\n", os.Args[0])
 			os.Exit(1)
 		} else {
 			dir = os.Args[1]
