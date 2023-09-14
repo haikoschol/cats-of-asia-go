@@ -394,9 +394,11 @@ func resizeImages(images []imageWithLoc) ([]imageWithLoc, error) {
 }
 
 func resizeImage(path, suffix string, width int) (string, error) {
+	dir := filepath.Dir(path)
+	basename := filepath.Base(path)
 	ext := filepath.Ext(path)
-	withoutExt := strings.TrimSuffix(path, ext)
-	pathResized := fmt.Sprintf("%s%s%s", withoutExt, suffix, ext)
+	withoutExt := strings.TrimSuffix(basename, ext)
+	pathResized := filepath.Join(dir, "scaled", fmt.Sprintf("%s%s%s", withoutExt, suffix, ext))
 
 	// make sure the resized file does not exist already and there is no directory with the same name
 	stats, err := os.Stat(pathResized)
