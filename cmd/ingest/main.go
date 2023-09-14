@@ -321,12 +321,28 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 		}
 
 		imgWithLoc := img
+		var neighborhood string
 		for _, comp := range locs[0].AddressComponents {
 			for _, t := range comp.Types {
-				if t == "administrative_area_level_1" {
-					imgWithLoc.city = comp.LongName
+				if t == "neighborhood" {
+					neighborhood = comp.LongName
+				} else if t == "administrative_area_level_1" {
+					switch comp.LongName {
+					case "กรุงเทพมหานคร":
+						imgWithLoc.city = "Bangkok"
+					case "เชียงใหม่":
+						imgWithLoc.city = "Chang Wat Chiang Mai"
+					case "Wilayah Persekutuan Kuala Lumpur":
+						imgWithLoc.city = "Kuala Lumpur"
+						fallthrough
+					default:
+						imgWithLoc.city = comp.LongName
+					}
 				} else if t == "country" {
 					imgWithLoc.country = comp.LongName
+					if comp.LongName == "Taiwan" {
+						imgWithLoc.city = neighborhood
+					}
 				}
 				if imgWithLoc.city != "" && imgWithLoc.country != "" {
 					break
