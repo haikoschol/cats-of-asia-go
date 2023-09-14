@@ -27,7 +27,7 @@ function makePopupContent(image, map) {
     const date = new Date(timestamp).toDateString();
     const location = formatLocation(image);
     const outer = document.createElement('div');
-    const catImage = makeImageLink(`images/${id}`, `images/${id}`, `photo #${id}, showing one or more cats`);
+    const catImage = makeImageLink(`images/${id}`, `images/${id}?size=smol`, `photo #${id}, showing one or more cats`);
     outer.appendChild(catImage);
 
     const footer = document.createElement('div');

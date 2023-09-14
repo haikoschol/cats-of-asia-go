@@ -71,7 +71,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
 
           favorites.toArray().forEach(imageId => {
               const img = document.createElement('img');
-              img.src = `/images/${imageId}`;
+              img.src = `/images/${imageId}?size=medium`;
               img.alt = `cat photo #${imageId}`;
               img.className = 'fav-img';
 
@@ -82,6 +82,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
               const card = document.createElement('article');
               card.className = 'fav-card';
               const footer = document.createElement('footer');
+              // TODO add "show on map" link
               footer.appendChild(makeRemoveButton(imageId, card));
 
               card.appendChild(a);

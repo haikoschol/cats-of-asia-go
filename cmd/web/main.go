@@ -20,14 +20,18 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"html/template"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,7 +55,6 @@ var (
 
 type image struct {
 	ID         int64     `json:"id"`
-	Path       string    `json:"path"`
 	Timestamp  time.Time `json:"timestamp"`
 	tzLocation string
 	Latitude   float64 `json:"latitude"`
@@ -134,34 +137,57 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, found := strings.CutPrefix(r.URL.Path, "/images/")
-	if !found || id == "" {
+	idStr, found := strings.CutPrefix(r.URL.Path, "/images/")
+	if !found || idStr == "" {
 		http.Redirect(w, r, "/images", http.StatusMovedPermanently)
 		return
 	}
 
-	row := app.db.QueryRow(`SELECT path FROM images WHERE id = $1;`, id)
-	var imgPath string
-	if err := row.Scan(&imgPath); err != nil {
-		// TODO send 404 if row not found
+	// sanitize id before passing it to the db
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		log.Printf("invalid image id in url path %s: %v\n", idStr, err)
+		writeError(w, http.StatusNotFound, errors.New("no such catto"))
+		return
+	}
+
+	row := app.db.QueryRow(`SELECT path_large, path_medium, path_small FROM images WHERE id = $1;`, id)
+	var pathLarge, pathMedium, pathSmall string
+	if err := row.Scan(&pathLarge, &pathMedium, &pathSmall); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, errors.New("no such catto"))
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	stats, err := os.Stat(imgPath)
+	var path string
+	switch strings.ToLower(r.URL.Query().Get("size")) {
+	case "small":
+	case "smol":
+		path = pathSmall
+	case "medium":
+		path = pathMedium
+	default:
+		path = pathLarge
+	}
+
+	stats, err := os.Stat(path)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("unable to stat file at %s: %w", imgPath, err))
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	f, err := os.Open(imgPath)
+	f, err := os.Open(path)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("unable to open file at %s: %w", imgPath, err))
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	defer f.Close()
 
-	w.Header().Add("Content-Type", "image/jpeg") // TODO support more image formats and video
+	w.Header().Add("Content-Type", mime.TypeByExtension(strings.ToLower(filepath.Ext(path))))
 	w.Header().Add("Content-Length", fmt.Sprintf("%d", stats.Size()))
 
 	if _, err := io.Copy(w, f); err != nil {
@@ -209,7 +235,7 @@ func serve404(w http.ResponseWriter) {
 	}
 	defer f.Close()
 
-	w.Header().Add("Content-Type", "image/jpeg") // TODO support more image formats and video
+	w.Header().Add("Content-Type", "image/jpeg")
 
 	if _, err := io.Copy(w, f); err != nil {
 		log.Println("failed sending image in http response:", err)
@@ -220,7 +246,6 @@ func serve404(w http.ResponseWriter) {
 func fetchImages(db *sql.DB) ([]image, error) {
 	query := `SELECT 
 		i.id,
-		i.path,
 		i.timestamp,
 		i.tz_location,
 		i.latitude,
@@ -238,7 +263,7 @@ func fetchImages(db *sql.DB) ([]image, error) {
 	var images []image
 	for rows.Next() {
 		var img image
-		err := rows.Scan(&img.ID, &img.Path, &img.Timestamp, &img.tzLocation, &img.Latitude, &img.Longitude, &img.City, &img.Country)
+		err := rows.Scan(&img.ID, &img.Timestamp, &img.tzLocation, &img.Latitude, &img.Longitude, &img.City, &img.Country)
 		if err != nil {
 			return nil, err
 		}
