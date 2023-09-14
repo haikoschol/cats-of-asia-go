@@ -332,9 +332,10 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 						imgWithLoc.city = "Bangkok"
 					case "เชียงใหม่":
 						imgWithLoc.city = "Chang Wat Chiang Mai"
+					case "Chang Wat Samut Prakan":
+						imgWithLoc.city = "Samut Prakan"
 					case "Wilayah Persekutuan Kuala Lumpur":
 						imgWithLoc.city = "Kuala Lumpur"
-						fallthrough
 					default:
 						imgWithLoc.city = comp.LongName
 					}
