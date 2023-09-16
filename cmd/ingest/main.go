@@ -59,16 +59,17 @@ var (
 )
 
 type imageWithLoc struct {
-	pathLarge  string
-	pathMedium string
-	pathSmall  string
-	sha256     string
-	timestamp  time.Time
-	tzLocation string
-	latitude   float64
-	longitude  float64
-	city       string
-	country    string
+	pathLarge    string
+	pathMedium   string
+	pathSmall    string
+	sha256       string
+	coordinateId *int64
+	tzLocation   string
+	timestamp    time.Time
+	latitude     float64
+	longitude    float64
+	city         string
+	country      string
 }
 
 func main() {
@@ -80,7 +81,15 @@ func main() {
 		log.Fatalf("unable to connect to database: %v\n", err)
 	}
 
-	dir := getImageDir()
+	mapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
+	if err != nil {
+		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
+	}
+
+	ingestDirectory(getImageDir(), mapsClient, db)
+}
+
+func ingestDirectory(dir string, mapsClient *maps.Client, db *sql.DB) {
 	images, err := collectFileInfo(dir)
 	if err != nil {
 		log.Fatalf("error while reading image files: %v\n", err)
@@ -91,14 +100,19 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if len(images) == 0 {
+		log.Printf("no new images found at %s\n", dir)
+		os.Exit(0)
+	}
+
 	images, err = resizeImages(images)
 	if err != nil {
 		log.Fatalf("error while resizing images: %v\n", err)
 	}
 
-	mapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
+	images, err = addLocationsFromDb(images, db)
 	if err != nil {
-		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
+		log.Printf("unable to add existing locations from DB: %v\n", err)
 	}
 
 	images, err = fixTimezones(images, mapsClient)
@@ -106,17 +120,12 @@ func main() {
 		log.Fatalf("error while fixing timezones: %v\n", err)
 	}
 
-	if len(images) == 0 {
-		log.Printf("no new images found at %s\n", dir)
-		os.Exit(0)
-	}
-
 	images, err = reverseGeocode(images, mapsClient)
 	if err != nil {
 		log.Fatalf("error while reverse geocoding: %v\n", err)
 	}
 
-	err = insertNewImages(images, db)
+	err = insertImages(images, db)
 	if err != nil {
 		log.Fatalf("error while inserting new images into db: %v\n", err)
 	}
@@ -239,6 +248,41 @@ func removeKnownImages(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error
 	return filtered, nil
 }
 
+// Terrible name. The function sets coordinateId and locationId in the imageWithLoc structs for which the data already
+// exists in the db. Later on those values will be used in the "INSERT images" query and no new coordinates or locations
+// need to be inserted.
+func addLocationsFromDb(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error) {
+	var withLocations []imageWithLoc
+
+	for _, img := range images {
+		withLoc := img
+
+		row := db.QueryRow(
+			"SELECT id from coordinates WHERE latitude = $1 AND longitude = $2",
+			img.latitude,
+			img.longitude,
+		)
+
+		var id int64
+		err := row.Scan(&id)
+		if err == nil {
+			withLoc.coordinateId = &id
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf(
+				"error while fetching coordinate ID for image %s. latitude: %f longitude: %f error: %v\n",
+				img.pathLarge,
+				img.latitude,
+				img.longitude,
+				err,
+			)
+		}
+
+		withLocations = append(withLocations, withLoc)
+	}
+
+	return withLocations, nil
+}
+
 func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, error) {
 	if verbose {
 		log.Println("fixing timezones...")
@@ -247,6 +291,16 @@ func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, e
 	var fixed []imageWithLoc
 
 	for _, img := range images {
+		fixedImg := img
+
+		if img.coordinateId != nil {
+			if verbose {
+				log.Printf("coordinate ID already set for image %s. skipping\n", img.pathLarge)
+			}
+			fixed = append(fixed, fixedImg)
+			continue
+		}
+
 		loc, err := getLocation(img.timestamp, img.latitude, img.longitude, client)
 		if err != nil {
 			return nil, err
@@ -257,7 +311,6 @@ func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, e
 			return nil, err
 		}
 
-		fixedImg := img
 		fixedImg.timestamp = localTS.UTC()
 		fixedImg.tzLocation = loc.String()
 		fixed = append(fixed, fixedImg)
@@ -300,6 +353,16 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 	var geocoded []imageWithLoc
 
 	for _, img := range images {
+		imgWithLoc := img
+
+		if img.coordinateId != nil {
+			if verbose {
+				log.Printf("coordinate ID already set for image %s. skipping\n", img.pathLarge)
+			}
+			geocoded = append(geocoded, imgWithLoc)
+			continue
+		}
+
 		r := &maps.GeocodingRequest{
 			LatLng: &maps.LatLng{
 				Lat: img.latitude,
@@ -320,7 +383,6 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 			)
 		}
 
-		imgWithLoc := img
 		var neighborhood string
 		for _, comp := range locs[0].AddressComponents {
 			for _, t := range comp.Types {
@@ -479,52 +541,26 @@ func encodeImage(m image.Image, path string) error {
 	}
 }
 
-func insertNewImages(images []imageWithLoc, db *sql.DB) error {
+func insertImages(images []imageWithLoc, db *sql.DB) error {
 	if verbose {
 		log.Println("inserting images into db...")
 	}
 
 	for _, img := range images {
-		tx, err := db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
-		if err != nil {
-			return err
+		if img.coordinateId == nil {
+			locId, err := getOrCreateLocation(img.city, img.country, img.tzLocation, db)
+			if err != nil {
+				return err
+			}
+
+			coordId, err := getOrCreateCoordinates(img.latitude, img.longitude, locId, db)
+			if err != nil {
+				return err
+			}
+
+			img.coordinateId = &coordId
 		}
-
-		row := tx.QueryRow(
-			`INSERT INTO
-    			images(path_large, path_medium, path_small, sha256, latitude, longitude, timestamp, tz_location)
-			VALUES
-			    ($1, $2, $3, $4, $5, $6, $7, $8)
-			RETURNING id`,
-			img.pathLarge,
-			img.pathMedium,
-			img.pathSmall,
-			img.sha256,
-			img.latitude,
-			img.longitude,
-			img.timestamp,
-			img.tzLocation,
-		)
-
-		var imageID int64
-		scanErr := row.Scan(&imageID)
-		if scanErr != nil {
-			_ = tx.Rollback()
-			return scanErr
-		}
-
-		_, locErr := tx.Exec(
-			`INSERT INTO locations(image_id, city, country) VALUES ($1, $2, $3)`,
-			imageID,
-			img.city,
-			img.country,
-		)
-		if locErr != nil {
-			_ = tx.Rollback()
-			return locErr
-		}
-
-		if err := tx.Commit(); err != nil {
+		if err := insertImage(img, db); err != nil {
 			return err
 		}
 	}
@@ -535,6 +571,70 @@ func insertNewImages(images []imageWithLoc, db *sql.DB) error {
 	return nil
 }
 
+func getOrCreateLocation(city, country, timezone string, db *sql.DB) (int64, error) {
+	_, err := db.Exec(
+		`INSERT INTO
+    			locations(city, country, timezone)
+			VALUES
+			    ($1, $2, $3)
+			ON CONFLICT (city, country) DO NOTHING`,
+		city,
+		country,
+		timezone,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	row := db.QueryRow("SELECT id FROM locations WHERE city = $1 and country = $2", city, country)
+	var id int64
+	err = row.Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func getOrCreateCoordinates(latitude, longitude float64, locationId int64, db *sql.DB) (int64, error) {
+	_, err := db.Exec(
+		`INSERT INTO
+    			coordinates(latitude, longitude, location_id)
+			VALUES
+			    ($1, $2, $3)
+			ON CONFLICT (latitude, longitude) DO NOTHING`,
+		latitude,
+		longitude,
+		locationId,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	row := db.QueryRow("SELECT id FROM coordinates WHERE latitude = $1 and longitude = $2", latitude, longitude)
+	var id int64
+	err = row.Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func insertImage(img imageWithLoc, db *sql.DB) error {
+	_, err := db.Exec(
+		`INSERT INTO
+    			images(path_large, path_medium, path_small, sha256, timestamp, coordinate_id)
+			VALUES
+			    ($1, $2, $3, $4, $5, $6)`,
+		img.pathLarge,
+		img.pathMedium,
+		img.pathSmall,
+		img.sha256,
+		img.timestamp,
+		img.coordinateId,
+	)
+	return err
+}
+
 func getImageDir() string {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -543,7 +643,7 @@ func getImageDir() string {
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--help" || os.Args[1] == "-h" {
-			fmt.Printf("usage: %s <pathLarge> - directory to scan for new images (default: current directory)\n", os.Args[0])
+			fmt.Printf("usage: %s <path> - directory to scan for new images (default: current directory)\n", os.Args[0])
 			os.Exit(1)
 		} else {
 			dir = os.Args[1]

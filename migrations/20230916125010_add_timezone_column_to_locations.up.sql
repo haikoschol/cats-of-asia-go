@@ -1,0 +1,2 @@
+ALTER TABLE locations
+    ADD COLUMN timezone TEXT NOT NULL DEFAULT '';
