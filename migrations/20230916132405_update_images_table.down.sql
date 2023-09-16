@@ -1,0 +1,5 @@
+ALTER TABLE images
+    DROP COLUMN coordinate_id,
+    ADD COLUMN latitude FLOAT NOT NULL DEFAULT 0.0,
+    ADD COLUMN longitude FLOAT NOT NULL DEFAULT 0.0,
+    ADD COLUMN tz_location TEXT NOT NULL DEFAULT '';

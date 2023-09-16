@@ -54,13 +54,13 @@ var (
 )
 
 type image struct {
-	ID         int64     `json:"id"`
-	Timestamp  time.Time `json:"timestamp"`
-	tzLocation string
-	Latitude   float64 `json:"latitude"`
-	Longitude  float64 `json:"longitude"`
-	City       string  `json:"city"`
-	Country    string  `json:"country"`
+	ID        int64     `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	timezone  string
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	City      string  `json:"city"`
+	Country   string  `json:"country"`
 }
 
 func main() {
@@ -245,15 +245,16 @@ func serve404(w http.ResponseWriter) {
 
 func fetchImages(db *sql.DB) ([]image, error) {
 	query := `SELECT 
-		i.id,
+		i.id AS image_id,
 		i.timestamp,
-		i.tz_location,
-		i.latitude,
-		i.longitude,
+		c.latitude,
+		c.longitude,
 		l.city,
-		l.country
+		l.country,
+		l.timezone
 	FROM images AS i
-	LEFT JOIN locations AS l ON i.id = l.image_id;`
+	JOIN coordinates AS c ON i.coordinate_id = c.id
+	JOIN locations AS l ON c.location_id = l.id`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -263,12 +264,12 @@ func fetchImages(db *sql.DB) ([]image, error) {
 	var images []image
 	for rows.Next() {
 		var img image
-		err := rows.Scan(&img.ID, &img.Timestamp, &img.tzLocation, &img.Latitude, &img.Longitude, &img.City, &img.Country)
+		err := rows.Scan(&img.ID, &img.Timestamp, &img.Latitude, &img.Longitude, &img.City, &img.Country, &img.timezone)
 		if err != nil {
 			return nil, err
 		}
 
-		loc, err := time.LoadLocation(img.tzLocation)
+		loc, err := time.LoadLocation(img.timezone)
 		if err != nil {
 			return nil, err
 		}
