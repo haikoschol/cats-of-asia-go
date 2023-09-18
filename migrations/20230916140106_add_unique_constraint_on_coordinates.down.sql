@@ -1,1 +1,0 @@
-ALTER TABLE coordinates DROP CONSTRAINT latitude_and_longitude;

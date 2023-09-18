@@ -1,3 +1,0 @@
-ALTER TABLE images
-    ADD COLUMN path_small TEXT NOT NULL DEFAULT '',
-    ADD COLUMN path_medium TEXT NOT NULL DEFAULT '';
