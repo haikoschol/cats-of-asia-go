@@ -57,28 +57,49 @@ func main() {
 	now := time.Now()
 	state := parseStateFile(os.Args[1])
 
+	platformId, err := getPlatformId("Mastodon", db)
+	if err != nil {
+		log.Fatalf("unable to retrieve platform ID for Mastodon from the database: %v\n", err)
+	}
+
 	for path, _ := range state.MediaItems {
-		if err := insertPost(path, now, db); err != nil {
+		if err := insertPost(path, now, platformId, db); err != nil {
 			log.Fatalf("unable to insert post for image %s: %v\n", path, err)
 		}
 	}
 }
 
-func insertPost(imgPath string, timestamp time.Time, db *sql.DB) error {
-	row := db.QueryRow("SELECT id FROM images WHERE path = $1", imgPath)
+func insertPost(imgPath string, timestamp time.Time, platformId int64, db *sql.DB) error {
+	row := db.QueryRow("SELECT id FROM images WHERE path_large = $1", imgPath)
 
-	var imgID int64
-	err := row.Scan(&imgID)
+	var imgId int64
+	err := row.Scan(&imgId)
 	if err != nil {
 		return err
 	}
 
-	_, err = db.Exec("INSERT INTO posts(image_id, timestamp) VALUES ($1, $2)", imgID, timestamp.UTC())
+	_, err = db.Exec(
+		"INSERT INTO posts(image_id, platform_id, timestamp) VALUES ($1, $2, $3)",
+		imgId,
+		platformId,
+		timestamp.UTC())
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func getPlatformId(name string, db *sql.DB) (int64, error) {
+	row := db.QueryRow("SELECT id FROM platforms WHERE name = $1", name)
+
+	var id int64
+	err := row.Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
 }
 
 func parseStateFile(path string) stateJSONFile {
