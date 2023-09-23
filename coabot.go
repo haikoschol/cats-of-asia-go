@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-package coabot
+package coa
 
 import (
 	"fmt"
@@ -23,6 +23,39 @@ import (
 	"strings"
 	"time"
 )
+
+type Image struct {
+	ID           int64     `json:"id"`
+	CoordinateID *int64    `json:"-"`
+	PathLarge    string    `json:"-"`
+	PathMedium   string    `json:"-"`
+	PathSmall    string    `json:"-"`
+	SHA256       string    `json:"sha256"`
+	Timestamp    time.Time `json:"timestamp"`
+	Timezone     string    `json:"-"`
+	Latitude     float64   `json:"latitude"`
+	Longitude    float64   `json:"longitude"`
+	City         string    `json:"city"`
+	Country      string    `json:"country"`
+}
+
+type Platform struct {
+	ID   int64
+	Name string
+}
+
+type Database interface {
+	GetPlatformByName(name string) (Platform, error)
+	GetOrCreateLocation(city, country, timezone string) (int64, error)
+	GetOrCreateCoordinates(latitude, longitude float64, locationId int64) (int64, error)
+	GetCoordinateID(latitude, longitude float64) (int64, error)
+	GetImage(id int64) (Image, error)
+	GetImages() ([]Image, error)
+	GetRandomUnusedImage(platform Platform) (Image, error)
+	GetUnusedImageCount(platform Platform) (int, error)
+	RemoveKnownImages(images []Image) ([]Image, error)
+	InsertImages(images []Image) error
+}
 
 // MediaCategory denotes whether a media item is a photo or video.
 type MediaCategory string
@@ -113,7 +146,7 @@ func (cac CityAndCountry) String() string {
 	return fmt.Sprintf("%s, %s", cac.City, cac.Country)
 }
 
-// PickRandomUnusedMediaItem returns a random  MediaItem from the given slice, that is not contained in the given
+// PickRandomUnusedMediaItem returns a random MediaItem from the given slice, that is not contained in the given
 // ApplicationState.
 func PickRandomUnusedMediaItem(mediaItems []MediaItem, state ApplicationState) MediaItem {
 	unusedItems := []MediaItem{}
