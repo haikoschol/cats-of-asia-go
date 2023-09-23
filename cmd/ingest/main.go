@@ -23,8 +23,8 @@ import (
 	"errors"
 	"fmt"
 	coabot "github.com/haikoschol/cats-of-asia"
+	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/lib/pq"
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
 	"googlemaps.github.io/maps"
@@ -50,7 +50,7 @@ const (
 
 var (
 	dbHost     = os.Getenv("COA_DB_HOST")
-	dbSSLmode  = os.Getenv("COA_DB_SSLMODE")
+	dbSSLMode  = os.Getenv("COA_DB_SSLMODE")
 	dbName     = os.Getenv("COA_DB_NAME")
 	dbUser     = os.Getenv("COA_DB_USER")
 	dbPassword = os.Getenv("COA_DB_PASSWORD")
@@ -58,44 +58,25 @@ var (
 	googleMapsApiKey = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
 )
 
-type imageWithLoc struct {
-	pathLarge    string
-	pathMedium   string
-	pathSmall    string
-	sha256       string
-	coordinateId *int64
-	tzLocation   string
-	timestamp    time.Time
-	latitude     float64
-	longitude    float64
-	city         string
-	country      string
-}
-
 func main() {
 	validateEnv()
 
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbName, dbSSLmode)
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
-	}
-
-	mapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
+	db, err := postgres.NewDatabase(dbUser, dbPassword, dbHost, dbName, postgres.SSLMode(dbSSLMode))
+	gmapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
 	if err != nil {
 		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
 	}
 
-	ingestDirectory(getImageDir(), mapsClient, db)
+	ingestDirectory(getImageDir(), gmapsClient, db)
 }
 
-func ingestDirectory(dir string, mapsClient *maps.Client, db *sql.DB) {
+func ingestDirectory(dir string, mapsClient *maps.Client, db coabot.Database) {
 	images, err := collectFileInfo(dir)
 	if err != nil {
 		log.Fatalf("error while reading image files: %v\n", err)
 	}
 
-	images, err = removeKnownImages(images, db)
+	images, err = db.RemoveKnownImages(images)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,7 +91,8 @@ func ingestDirectory(dir string, mapsClient *maps.Client, db *sql.DB) {
 		log.Fatalf("error while resizing images: %v\n", err)
 	}
 
-	images, err = addLocationsFromDb(images, db)
+	// This needs to happen before fixing timezones and geocoding, to avoid redundant requests to the Google Maps API.
+	images, err = setCoordinateID(images, db)
 	if err != nil {
 		log.Printf("unable to add existing locations from DB: %v\n", err)
 	}
@@ -131,7 +113,7 @@ func ingestDirectory(dir string, mapsClient *maps.Client, db *sql.DB) {
 	}
 }
 
-func collectFileInfo(dir string) ([]imageWithLoc, error) {
+func collectFileInfo(dir string) ([]coabot.Image, error) {
 	if verbose {
 		log.Printf("scanning directory %s...", dir)
 	}
@@ -141,7 +123,7 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 		log.Fatalf("os.ReadDir(): %v\n", err)
 	}
 
-	var images []imageWithLoc
+	var images []coabot.Image
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -188,18 +170,15 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 			return nil, fmt.Errorf("unable to read timestamp from  exif data in file at %s: %w", abspath, err)
 		}
 
-		image := imageWithLoc{
-			pathLarge:  abspath,
-			sha256:     hash,
-			latitude:   latitude,
-			longitude:  longitude,
-			timestamp:  creationTime,
-			tzLocation: "",
-			city:       "",
-			country:    "",
+		img := coabot.Image{
+			PathLarge: abspath,
+			SHA256:    hash,
+			Latitude:  latitude,
+			Longitude: longitude,
+			Timestamp: creationTime,
 		}
 
-		images = append(images, image)
+		images = append(images, img)
 	}
 
 	if verbose {
@@ -208,111 +187,58 @@ func collectFileInfo(dir string) ([]imageWithLoc, error) {
 	return images, nil
 }
 
-func removeKnownImages(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error) {
-	var hashes []string
+// SetCoordinateID on images for which the data already exists in the db. This avoids unnecessary requests to the
+// Google Maps API.
+func setCoordinateID(images []coabot.Image, db coabot.Database) ([]coabot.Image, error) {
+	var withCoordinateIDs []coabot.Image
 
 	for _, img := range images {
-		hashes = append(hashes, img.sha256)
-	}
-
-	rows, err := db.Query(`SELECT path_large, sha256 FROM images WHERE sha256 = ANY($1)`, pq.Array(hashes))
-	if err != nil {
-		return nil, err
-	}
-
-	knownImages := make(map[string]string)
-
-	for rows.Next() {
-		var imgPath, hash string
-		err = rows.Scan(&imgPath, &hash)
+		coordID, err := db.GetCoordinateID(img.Latitude, img.Longitude)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
 			return nil, err
 		}
-		knownImages[hash] = imgPath
+
+		img.CoordinateID = &coordID
+
+		withCoordinateIDs = append(withCoordinateIDs, img)
 	}
 
-	var filtered []imageWithLoc
-
-	for _, img := range images {
-		imgPath, ok := knownImages[img.sha256]
-		if ok {
-			if verbose {
-				log.Printf("file %s already exists in the database as %s\n", img.pathLarge, imgPath)
-			}
-			continue
-		}
-
-		filtered = append(filtered, img)
-	}
-
-	return filtered, nil
+	return withCoordinateIDs, nil
 }
 
-// Terrible name. The function sets coordinateId and locationId in the imageWithLoc structs for which the data already
-// exists in the db. Later on those values will be used in the "INSERT images" query and no new coordinates or locations
-// need to be inserted.
-func addLocationsFromDb(images []imageWithLoc, db *sql.DB) ([]imageWithLoc, error) {
-	var withLocations []imageWithLoc
-
-	for _, img := range images {
-		withLoc := img
-
-		row := db.QueryRow(
-			"SELECT id from coordinates WHERE latitude = $1 AND longitude = $2",
-			img.latitude,
-			img.longitude,
-		)
-
-		var id int64
-		err := row.Scan(&id)
-		if err == nil {
-			withLoc.coordinateId = &id
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			log.Printf(
-				"error while fetching coordinate ID for image %s. latitude: %f longitude: %f error: %v\n",
-				img.pathLarge,
-				img.latitude,
-				img.longitude,
-				err,
-			)
-		}
-
-		withLocations = append(withLocations, withLoc)
-	}
-
-	return withLocations, nil
-}
-
-func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, error) {
+func fixTimezones(images []coabot.Image, client *maps.Client) ([]coabot.Image, error) {
 	if verbose {
 		log.Println("fixing timezones...")
 	}
 
-	var fixed []imageWithLoc
+	var fixed []coabot.Image
 
 	for _, img := range images {
 		fixedImg := img
 
-		if img.coordinateId != nil {
+		if img.CoordinateID != nil {
 			if verbose {
-				log.Printf("coordinate ID already set for image %s. skipping\n", img.pathLarge)
+				log.Printf("coordinate ID already set for image %s. skipping\n", img.PathLarge)
 			}
 			fixed = append(fixed, fixedImg)
 			continue
 		}
 
-		loc, err := getLocation(img.timestamp, img.latitude, img.longitude, client)
+		tzID, err := getTimezoneID(img.Timestamp, img.Latitude, img.Longitude, client)
 		if err != nil {
 			return nil, err
 		}
 
-		localTS, err := time.ParseInLocation(time.DateTime, img.timestamp.Format(time.DateTime), loc)
+		localTS, err := time.ParseInLocation(time.DateTime, img.Timestamp.Format(time.DateTime), tzID)
 		if err != nil {
 			return nil, err
 		}
 
-		fixedImg.timestamp = localTS.UTC()
-		fixedImg.tzLocation = loc.String()
+		fixedImg.Timestamp = localTS.UTC()
+		fixedImg.Timezone = tzID.String()
 		fixed = append(fixed, fixedImg)
 	}
 
@@ -322,7 +248,7 @@ func fixTimezones(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, e
 	return fixed, nil
 }
 
-func getLocation(t time.Time, lat float64, lng float64, client *maps.Client) (*time.Location, error) {
+func getTimezoneID(t time.Time, lat float64, lng float64, client *maps.Client) (*time.Location, error) {
 	t, err := time.ParseInLocation(time.DateTime, t.Format(time.DateTime), time.UTC)
 	if err != nil {
 		return nil, err
@@ -345,19 +271,19 @@ func getLocation(t time.Time, lat float64, lng float64, client *maps.Client) (*t
 	return time.LoadLocation(res.TimeZoneID)
 }
 
-func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc, error) {
+func reverseGeocode(images []coabot.Image, client *maps.Client) ([]coabot.Image, error) {
 	if verbose {
 		log.Println("reverse geocoding...")
 	}
 
-	var geocoded []imageWithLoc
+	var geocoded []coabot.Image
 
 	for _, img := range images {
 		imgWithLoc := img
 
-		if img.coordinateId != nil {
+		if img.CoordinateID != nil {
 			if verbose {
-				log.Printf("coordinate ID already set for image %s. skipping\n", img.pathLarge)
+				log.Printf("coordinate ID already set for image %s. skipping\n", img.PathLarge)
 			}
 			geocoded = append(geocoded, imgWithLoc)
 			continue
@@ -365,8 +291,8 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 
 		r := &maps.GeocodingRequest{
 			LatLng: &maps.LatLng{
-				Lat: img.latitude,
-				Lng: img.longitude,
+				Lat: img.Latitude,
+				Lng: img.Longitude,
 			},
 		}
 
@@ -378,8 +304,8 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 		if len(locs) == 0 || len(locs[0].AddressComponents) == 0 {
 			return nil, fmt.Errorf(
 				"the Google Maps API did not return required address components for latitude %f, longitude %f",
-				img.latitude,
-				img.longitude,
+				img.Latitude,
+				img.Longitude,
 			)
 		}
 
@@ -391,30 +317,30 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 				} else if t == "administrative_area_level_1" {
 					switch comp.LongName {
 					case "กรุงเทพมหานคร":
-						imgWithLoc.city = "Bangkok"
+						imgWithLoc.City = "Bangkok"
 					case "เชียงใหม่":
-						imgWithLoc.city = "Chang Wat Chiang Mai"
+						imgWithLoc.City = "Chang Wat Chiang Mai"
 					case "Chang Wat Samut Prakan":
-						imgWithLoc.city = "Samut Prakan"
+						imgWithLoc.City = "Samut Prakan"
 					case "Wilayah Persekutuan Kuala Lumpur":
-						imgWithLoc.city = "Kuala Lumpur"
+						imgWithLoc.City = "Kuala Lumpur"
 					default:
-						imgWithLoc.city = comp.LongName
+						imgWithLoc.City = comp.LongName
 					}
 				} else if t == "country" {
-					imgWithLoc.country = comp.LongName
+					imgWithLoc.Country = comp.LongName
 					if comp.LongName == "Taiwan" {
-						imgWithLoc.city = neighborhood
+						imgWithLoc.City = neighborhood
 					}
 				}
-				if imgWithLoc.city != "" && imgWithLoc.country != "" {
+				if imgWithLoc.City != "" && imgWithLoc.Country != "" {
 					break
 				}
 			}
 		}
 
-		if imgWithLoc.city == "" || imgWithLoc.country == "" {
-			return nil, fmt.Errorf("couldn't find either city or country for coordinates %f, %f", img.latitude, img.longitude)
+		if imgWithLoc.City == "" || imgWithLoc.Country == "" {
+			return nil, fmt.Errorf("couldn't find either city or country for coordinates %f, %f", img.Latitude, img.Longitude)
 		}
 
 		geocoded = append(geocoded, imgWithLoc)
@@ -426,23 +352,23 @@ func reverseGeocode(images []imageWithLoc, client *maps.Client) ([]imageWithLoc,
 	return geocoded, nil
 }
 
-func resizeImages(images []imageWithLoc) ([]imageWithLoc, error) {
+func resizeImages(images []coabot.Image) ([]coabot.Image, error) {
 	if verbose {
 		log.Println("resizing images...")
 	}
 
-	var resized []imageWithLoc
+	var resized []coabot.Image
 
 	for _, img := range images {
 		imgWithResized := img
 		var err error
 
-		imgWithResized.pathSmall, err = resizeImage(img.pathLarge, imageSuffixSmall, imageWidthSmall)
+		imgWithResized.PathSmall, err = resizeImage(img.PathLarge, imageSuffixSmall, imageWidthSmall)
 		if err != nil {
 			return nil, err
 		}
 
-		imgWithResized.pathMedium, err = resizeImage(img.pathLarge, imageSuffixMedium, imageWidthMedium)
+		imgWithResized.PathMedium, err = resizeImage(img.PathLarge, imageSuffixMedium, imageWidthMedium)
 		if err != nil {
 			return nil, err
 		}
@@ -541,98 +467,19 @@ func encodeImage(m image.Image, path string) error {
 	}
 }
 
-func insertImages(images []imageWithLoc, db *sql.DB) error {
+func insertImages(images []coabot.Image, db coabot.Database) error {
 	if verbose {
 		log.Println("inserting images into db...")
 	}
 
-	for _, img := range images {
-		if img.coordinateId == nil {
-			locId, err := getOrCreateLocation(img.city, img.country, img.tzLocation, db)
-			if err != nil {
-				return err
-			}
-
-			coordId, err := getOrCreateCoordinates(img.latitude, img.longitude, locId, db)
-			if err != nil {
-				return err
-			}
-
-			img.coordinateId = &coordId
-		}
-		if err := insertImage(img, db); err != nil {
-			return err
-		}
+	if err := db.InsertImages(images); err != nil {
+		return err
 	}
 
 	if verbose {
 		log.Println("done")
 	}
 	return nil
-}
-
-func getOrCreateLocation(city, country, timezone string, db *sql.DB) (int64, error) {
-	_, err := db.Exec(
-		`INSERT INTO
-    			locations(city, country, timezone)
-			VALUES
-			    ($1, $2, $3)
-			ON CONFLICT (city, country) DO NOTHING`,
-		city,
-		country,
-		timezone,
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	row := db.QueryRow("SELECT id FROM locations WHERE city = $1 and country = $2", city, country)
-	var id int64
-	err = row.Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
-func getOrCreateCoordinates(latitude, longitude float64, locationId int64, db *sql.DB) (int64, error) {
-	_, err := db.Exec(
-		`INSERT INTO
-    			coordinates(latitude, longitude, location_id)
-			VALUES
-			    ($1, $2, $3)
-			ON CONFLICT (latitude, longitude) DO NOTHING`,
-		latitude,
-		longitude,
-		locationId,
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	row := db.QueryRow("SELECT id FROM coordinates WHERE latitude = $1 and longitude = $2", latitude, longitude)
-	var id int64
-	err = row.Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
-func insertImage(img imageWithLoc, db *sql.DB) error {
-	_, err := db.Exec(
-		`INSERT INTO
-    			images(path_large, path_medium, path_small, sha256, timestamp, coordinate_id)
-			VALUES
-			    ($1, $2, $3, $4, $5, $6)`,
-		img.pathLarge,
-		img.pathMedium,
-		img.pathSmall,
-		img.sha256,
-		img.timestamp,
-		img.coordinateId,
-	)
-	return err
 }
 
 func getImageDir() string {
@@ -658,7 +505,7 @@ func validateEnv() {
 	if dbHost == "" {
 		errors = append(errors, "COA_DB_HOST env var missing")
 	}
-	if dbSSLmode == "" {
+	if dbSSLMode == "" {
 		errors = append(errors, "COA_DB_SSLMODE env var missing")
 	}
 	if dbName == "" {

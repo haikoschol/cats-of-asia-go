@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	coabot "github.com/haikoschol/cats-of-asia"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"html/template"
@@ -52,16 +53,6 @@ var (
 	indexHTML     string
 	indexTemplate = template.Must(template.New("cattos").Parse(indexHTML))
 )
-
-type image struct {
-	ID        int64     `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	timezone  string
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	City      string  `json:"city"`
-	Country   string  `json:"country"`
-}
 
 func main() {
 	if mapboxAccessToken == "" {
@@ -243,7 +234,7 @@ func serve404(w http.ResponseWriter) {
 	}
 }
 
-func fetchImages(db *sql.DB) ([]image, error) {
+func fetchImages(db *sql.DB) ([]coabot.Image, error) {
 	query := `SELECT 
 		i.id AS image_id,
 		i.timestamp,
@@ -261,15 +252,15 @@ func fetchImages(db *sql.DB) ([]image, error) {
 		return nil, err
 	}
 
-	var images []image
+	var images []coabot.Image
 	for rows.Next() {
-		var img image
-		err := rows.Scan(&img.ID, &img.Timestamp, &img.Latitude, &img.Longitude, &img.City, &img.Country, &img.timezone)
+		var img coabot.Image
+		err := rows.Scan(&img.ID, &img.Timestamp, &img.Latitude, &img.Longitude, &img.City, &img.Country, &img.Timezone)
 		if err != nil {
 			return nil, err
 		}
 
-		loc, err := time.LoadLocation(img.timezone)
+		loc, err := time.LoadLocation(img.Timezone)
 		if err != nil {
 			return nil, err
 		}
