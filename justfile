@@ -23,7 +23,6 @@ migrate-down:
 build:
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/coabot
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/ingest
-    go build -o dist github.com/haikoschol/cats-of-asia/cmd/migrate-posts
     go build -o dist github.com/haikoschol/cats-of-asia/cmd/web
 
 dev:
@@ -44,8 +43,7 @@ deploy-web hostname="catsof.asia":
     scp dist/linux/web {{hostname}}:/usr/local/bin/
     ssh -t {{hostname}} "sudo systemctl start coaweb"
 
-# build the ingest and migrate-posts binaries and scp to hostname (which is assumed to run x86_64 Linux)
+# build the ingest binary and scp to hostname (which is assumed to run x86_64 Linux)
 deploy-utils hostname="catsof.asia":
     GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/ingest
-    GOOS=linux GOARCH=amd64 go build -o dist/linux github.com/haikoschol/cats-of-asia/cmd/migrate-posts
-    scp dist/linux/{ingest,migrate-posts} {{hostname}}:/usr/local/bin/
+    scp dist/linux/ingest {{hostname}}:/usr/local/bin/
