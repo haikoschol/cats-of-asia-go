@@ -1,9 +1,10 @@
 Cats of Asia
 ------------
 
-This is a Mastodon & Twitter bot that posts photos of cats taken in Asia. The media to post is randomly picked from a
-local directory or a Google Photos album. However it turns out that Google Photos sucks because it strips location data
-when fetching media through their API.
+This is a web app and social media bot that shows/posts photos of cats taken in Asia. The photo to post is randomly
+picked from a  local directory.
+
+https://catsof.asia
 
 https://botsin.space/@CatsOfAsia
 
