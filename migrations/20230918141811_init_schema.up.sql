@@ -43,6 +43,5 @@ CREATE TABLE posts
     id          SERIAL PRIMARY KEY,
     image_id    INTEGER REFERENCES images (id),
     platform_id INTEGER REFERENCES platforms (id),
-    timestamp   TIMESTAMPTZ NOT NULL
+    timestamp   TIMESTAMPTZ DEFAULT now()
 );
-

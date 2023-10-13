@@ -19,7 +19,7 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/lib/pq"
 	"time"
 )
@@ -36,7 +36,7 @@ type pgDatabase struct {
 	db *sql.DB
 }
 
-func NewDatabase(dbUser, dbPassword, dbHost, dbName string, dbSSLMode SSLMode) (coabot.Database, error) {
+func NewDatabase(dbUser, dbPassword, dbHost, dbName string, dbSSLMode SSLMode) (coa.Database, error) {
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbName, dbSSLMode)
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -44,13 +44,6 @@ func NewDatabase(dbUser, dbPassword, dbHost, dbName string, dbSSLMode SSLMode) (
 	}
 
 	return &pgDatabase{db}, nil
-}
-
-func (d *pgDatabase) GetPlatformByName(name string) (coabot.Platform, error) {
-	p := coabot.Platform{}
-	row := d.db.QueryRow("SELECT id, name FROM platforms WHERE LOWER(name) = $1", name)
-	err := row.Scan(&p.ID, &p.Name)
-	return p, err
 }
 
 func (d *pgDatabase) GetOrCreateLocation(city, country, timezone string) (int64, error) {
@@ -108,7 +101,7 @@ func (d *pgDatabase) GetCoordinateID(latitude, longitude float64) (int64, error)
 	return id, err
 }
 
-func (d *pgDatabase) GetImage(id int64) (coabot.Image, error) {
+func (d *pgDatabase) GetImage(id int64) (coa.Image, error) {
 	row := d.db.QueryRow(`
 		SELECT 
 			i.id AS image_id,
@@ -128,7 +121,7 @@ func (d *pgDatabase) GetImage(id int64) (coabot.Image, error) {
 		WHERE i.id = $1`,
 		id)
 
-	var img coabot.Image
+	var img coa.Image
 	err := row.Scan(
 		&img.ID,
 		&img.PathLarge,
@@ -149,7 +142,7 @@ func (d *pgDatabase) GetImage(id int64) (coabot.Image, error) {
 	return fixTimezone(img)
 }
 
-func (d *pgDatabase) GetImages() ([]coabot.Image, error) {
+func (d *pgDatabase) GetImages() ([]coa.Image, error) {
 	rows, err := d.db.Query(`
 		SELECT 
 			i.id AS image_id,
@@ -172,11 +165,11 @@ func (d *pgDatabase) GetImages() ([]coabot.Image, error) {
 		return nil, err
 	}
 
-	var images []coabot.Image
+	var images []coa.Image
 	var coordID int64
 
 	for rows.Next() {
-		var img coabot.Image
+		var img coa.Image
 		err := rows.Scan(
 			&img.ID,
 			&img.PathLarge,
@@ -207,7 +200,7 @@ func (d *pgDatabase) GetImages() ([]coabot.Image, error) {
 	return images, nil
 }
 
-func (d *pgDatabase) GetRandomUnusedImage(platform coabot.Platform) (coabot.Image, error) {
+func (d *pgDatabase) GetRandomUnusedImage(platform coa.Platform) (coa.Image, error) {
 	row := d.db.QueryRow(`
 		SELECT 
 			i.id AS image_id,
@@ -225,12 +218,14 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coabot.Platform) (coabot.Imag
 		FROM images AS i
 		JOIN coordinates AS c ON i.coordinate_id = c.id
 		JOIN locations AS l ON c.location_id = l.id
-		WHERE i.id NOT IN (SELECT image_id FROM posts where platform_id = $1)
+		WHERE i.id NOT IN (
+			SELECT image_id FROM posts where platform_id = (SELECT id FROM platforms WHERE name = $1)
+	    )
 		ORDER BY random()
 		LIMIT 1;`,
-		platform.ID)
+		platform)
 
-	var img coabot.Image
+	var img coa.Image
 	err := row.Scan(
 		&img.ID,
 		&img.PathLarge,
@@ -246,22 +241,24 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coabot.Platform) (coabot.Imag
 	return img, err
 }
 
-func (d *pgDatabase) GetUnusedImageCount(platform coabot.Platform) (int, error) {
+func (d *pgDatabase) GetUnusedImageCount(platform coa.Platform) (int, error) {
 	row := d.db.QueryRow(`
 		SELECT 
 			COUNT(id)
 		FROM images
-		WHERE id NOT IN (SELECT image_id FROM posts where platform_id = $1)
+		WHERE id NOT IN (
+			SELECT image_id FROM posts where platform_id = (SELECT id FROM platforms WHERE name = $1)
+	    )
 		ORDER BY random()
 		LIMIT 1;`,
-		platform.ID)
+		platform)
 
 	var count int
 	err := row.Scan(&count)
 	return count, err
 }
 
-func (d *pgDatabase) RemoveKnownImages(images []coabot.Image) ([]coabot.Image, error) {
+func (d *pgDatabase) RemoveKnownImages(images []coa.Image) ([]coa.Image, error) {
 	var hashes []string
 
 	for _, img := range images {
@@ -284,7 +281,7 @@ func (d *pgDatabase) RemoveKnownImages(images []coabot.Image) ([]coabot.Image, e
 		knownImages[hash] = imgPath
 	}
 
-	var filtered []coabot.Image
+	var filtered []coa.Image
 
 	for _, img := range images {
 		_, ok := knownImages[img.SHA256]
@@ -298,7 +295,7 @@ func (d *pgDatabase) RemoveKnownImages(images []coabot.Image) ([]coabot.Image, e
 	return filtered, nil
 }
 
-func (d *pgDatabase) InsertImages(images []coabot.Image) error {
+func (d *pgDatabase) InsertImages(images []coa.Image) error {
 	for _, img := range images {
 		if img.CoordinateID == nil {
 			locId, err := d.GetOrCreateLocation(img.City, img.Country, img.Timezone)
@@ -332,7 +329,29 @@ func (d *pgDatabase) InsertImages(images []coabot.Image) error {
 	return nil
 }
 
-func fixTimezone(image coabot.Image) (coabot.Image, error) {
+func (d *pgDatabase) InsertPost(image coa.Image, platform coa.Platform) error {
+	row := d.db.QueryRow("SELECT id FROM platforms WHERE name = $1", platform)
+	var pID int64
+	err := row.Scan(&pID)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.db.Exec(
+		`INSERT INTO
+    			posts(image_id, platform_id)
+			VALUES
+			    ($1, $2)`,
+		image.ID,
+		pID,
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func fixTimezone(image coa.Image) (coa.Image, error) {
 	loc, err := time.LoadLocation(image.Timezone)
 	if err != nil {
 		return image, err

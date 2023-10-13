@@ -19,7 +19,7 @@ package coa
 import (
 	"fmt"
 	"io"
-	"math/rand"
+	"os"
 	"strings"
 	"time"
 )
@@ -39,13 +39,48 @@ type Image struct {
 	Country      string    `json:"country"`
 }
 
-type Platform struct {
-	ID   int64
-	Name string
+func (img Image) Path() string {
+	return img.PathLarge
 }
 
+func (img Image) Read() (io.ReadCloser, error) {
+	f, err := os.Open(img.Path())
+	if err != nil {
+		return nil, fmt.Errorf("unable to open file at %s: %w", img.Path(), err)
+	}
+	return f, err
+}
+
+func (img Image) Content() ([]byte, error) {
+	data, err := os.ReadFile(img.Path())
+	if err != nil {
+		return nil, fmt.Errorf("unable to read file at %s: %w", img.Path(), err)
+	}
+	return data, nil
+}
+
+func (img Image) Location() string {
+	if img.City == "" && img.Country != "" {
+		return img.Country
+	}
+	if img.Country == "" && img.City != "" {
+		return img.City
+	}
+	if img.City == "" && img.Country == "" {
+		return "an undisclosed location"
+	}
+
+	return fmt.Sprintf("%s, %s", img.City, img.Country)
+}
+
+type Platform string
+
+const (
+	Mastodon Platform = "Mastodon"
+	X                 = "X"
+)
+
 type Database interface {
-	GetPlatformByName(name string) (Platform, error)
 	GetOrCreateLocation(city, country, timezone string) (int64, error)
 	GetOrCreateCoordinates(latitude, longitude float64, locationId int64) (int64, error)
 	GetCoordinateID(latitude, longitude float64) (int64, error)
@@ -55,109 +90,15 @@ type Database interface {
 	GetUnusedImageCount(platform Platform) (int, error)
 	RemoveKnownImages(images []Image) ([]Image, error)
 	InsertImages(images []Image) error
+	InsertPost(image Image, platform Platform) error
 }
 
-// MediaCategory denotes whether a media item is a photo or video.
-type MediaCategory string
-
-const (
-	Photo MediaCategory = "photo"
-	Video               = "video"
-)
-
-type MediaMetadata struct {
-	// CreationTime is the time when the photo or video was taken, in the timezone where it was taken.
-	CreationTime time.Time
-	Latitude     float64
-	Longitude    float64
-}
-
-// MediaItem uniquely identifies a photo or video in a MediaAlbum and provides access to metadata and content.
-type MediaItem interface {
-	// Id is an identifier specific to the MediaAlbum implementation this MediaItem belongs to. It is only guaranteed
-	// to be unique in that album.
-	Id() string
-
-	// Filename of the photo or video.
-	Filename() string
-
-	// Category denotes the type of media.
-	Category() MediaCategory
-
-	// Metadata returns info from EXIF tags
-	Metadata() (*MediaMetadata, error)
-
-	// Content returns the raw bytes of the photo or video
-	Content() ([]byte, error)
-
-	// Read returns an io.ReadCloser for reading the media content. The caller is responsible for closing.
-	Read() (io.ReadCloser, error)
-}
-
-// MediaAlbum is a repository of media items.
-type MediaAlbum interface {
-	// Id returns an opaque identifier for the MediaAlbum
-	Id() string
-
-	// GetMediaItems lists all media items in the album.
-	GetMediaItems() ([]MediaItem, error)
-}
-
-// Publisher allows publishing photos or videos.
+// Publisher allows posting images to a platform.
 type Publisher interface {
-	// Name returns either "Mastodon" or "Twitter" for now
-	Name() string
-	// Publish sends a photo or video together with a description to a platform.
-	Publish(item MediaItem, description string) error
-}
-
-// ApplicationState provides a persistence mechanism for keeping track of which items in a MediaAlbum have already been
-// published.
-type ApplicationState interface {
-	// Add adds a MediaItem to the persistent application state.
-	Add(item MediaItem) error
-
-	// Contains checks whether the given MediaItem has already been added to the persistent application state.
-	Contains(item MediaItem) bool
-}
-
-// Geocoder codes geo
-type Geocoder interface {
-	// LookupCityAndCountry returns a city and country name for the given coordinates
-	LookupCityAndCountry(latitude, longitude float64) (CityAndCountry, error)
-}
-
-type CityAndCountry struct {
-	City    string
-	Country string
-}
-
-func (cac CityAndCountry) String() string {
-	if cac.City == "" && cac.Country != "" {
-		return cac.Country
-	}
-	if cac.Country == "" && cac.City != "" {
-		return cac.City
-	}
-	if cac.City == "" && cac.Country == "" {
-		return "an undisclosed location"
-	}
-
-	return fmt.Sprintf("%s, %s", cac.City, cac.Country)
-}
-
-// PickRandomUnusedMediaItem returns a random MediaItem from the given slice, that is not contained in the given
-// ApplicationState.
-func PickRandomUnusedMediaItem(mediaItems []MediaItem, state ApplicationState) MediaItem {
-	unusedItems := []MediaItem{}
-	for _, item := range mediaItems {
-		if !state.Contains(item) {
-			unusedItems = append(unusedItems, item)
-		}
-	}
-
-	idx := rand.Intn(len(unusedItems))
-	return unusedItems[idx]
+	// Platform returns the platform a Publisher instance posts to.
+	Platform() Platform
+	// Publish sends an image together with a description to a platform.
+	Publish(image Image, description string) error
 }
 
 // IsSupportedMedia checks whether a given file type can be used by the bot/web app (JPEG only for now)

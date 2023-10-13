@@ -17,14 +17,11 @@
 package main
 
 import (
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/internal/bot"
-	filesystem_album "github.com/haikoschol/cats-of-asia/internal/fsalbum"
-	google_maps_geocoder "github.com/haikoschol/cats-of-asia/internal/gmaps"
-	google_photos "github.com/haikoschol/cats-of-asia/internal/gphotos"
 	"github.com/haikoschol/cats-of-asia/internal/mastodon"
-	"github.com/haikoschol/cats-of-asia/internal/state_json"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
+	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/matrix-org/gomatrix"
 	_ "image/jpeg"
@@ -33,17 +30,11 @@ import (
 )
 
 var (
-	statePath = os.Getenv("COABOT_STATE_FILE")
-
-	// Either COABOT_ALBUM_BASE_PATH or COABOT_GOOGLE_PHOTOS_* must be set. If both are, a filesystem-backed album will
-	// be used.
-	fsAlbumBasePath = os.Getenv("COABOT_ALBUM_BASE_PATH")
-
-	googlePhotosAlbumId         = os.Getenv("COABOT_GOOGLE_PHOTOS_ALBUM_ID")
-	googlePhotosCredentialsPath = os.Getenv("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE")
-	googlePhotosTokenPath       = os.Getenv("COABOT_GOOGLE_PHOTOS_TOKEN_FILE")
-
-	googleMapsApiKey = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
+	dbHost     = os.Getenv("COA_DB_HOST")
+	dbSSLMode  = os.Getenv("COA_DB_SSLMODE")
+	dbName     = os.Getenv("COA_DB_NAME")
+	dbUser     = os.Getenv("COA_DB_USER")
+	dbPassword = os.Getenv("COA_DB_PASSWORD")
 
 	mastodonServer      = os.Getenv("COABOT_MASTODON_SERVER")
 	mastodonAccessToken = os.Getenv("COABOT_MASTODON_ACCESS_TOKEN")
@@ -62,31 +53,9 @@ var (
 func main() {
 	validateEnv()
 
-	state, err := state_json.New(statePath)
+	db, err := postgres.NewDatabase(dbUser, dbPassword, dbHost, dbName, postgres.SSLMode(dbSSLMode))
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	var album coabot.MediaAlbum
-
-	if fsAlbumBasePath != "" {
-		album, err = filesystem_album.New(fsAlbumBasePath)
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		album, err = google_photos.New(googlePhotosAlbumId, googlePhotosCredentialsPath, googlePhotosTokenPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	var geocoder coabot.Geocoder
-	if googleMapsApiKey != "" {
-		geocoder, err = google_maps_geocoder.New(googleMapsApiKey)
-		if err != nil {
-			log.Fatal(err)
-		}
 	}
 
 	publishers, err := buildPublishers()
@@ -99,7 +68,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bobTheBot, err := bot.New(state, album, publishers[0], geocoder, matrix, matrixLogRoomId, 4242)
+	bobTheBot, err := bot.NewBot(db, publishers[0], matrix, matrixLogRoomId, 4242)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -115,8 +84,8 @@ func main() {
 	}
 }
 
-func buildPublishers() ([]coabot.Publisher, error) {
-	publishers := []coabot.Publisher{}
+func buildPublishers() ([]coa.Publisher, error) {
+	publishers := []coa.Publisher{}
 
 	// should be unneccesary to check all mastodon config vars since validateEnv() already did that
 	if mastodonServer != "" {
@@ -128,7 +97,7 @@ func buildPublishers() ([]coabot.Publisher, error) {
 	}
 
 	if twitterConsumerKey != "" {
-		tp := twitter.New(twitter.Credentials{
+		tp := twitter.NewPublisher(twitter.Credentials{
 			ConsumerKey:    twitterConsumerKey,
 			ConsumerSecret: twitterConsumerSecret,
 			AccessToken:    twitterAccessToken,
@@ -140,36 +109,8 @@ func buildPublishers() ([]coabot.Publisher, error) {
 	return publishers, nil
 }
 
-// the logic is getting very hairy with all this optional config. should probably use a robust env/config mgmt library
+// having these funcs in all executables is ugly. should probably use a robust env/config mgmt library
 func validateEnv() {
-	if fsAlbumBasePath == "" {
-		if googlePhotosAlbumId == "" || googlePhotosCredentialsPath == "" || googlePhotosTokenPath == "" {
-			log.Fatal("either COABOT_ALBUM_BASE_PATH or COABOT_GOOGLE_PHOTOS_ALBUM_ID, " +
-				"COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE and COABOT_GOOGLE_PHOTOS_TOKEN_FILE need to be set")
-		}
-
-		bail := false
-		if googlePhotosAlbumId == "" {
-			log.Print("COABOT_GOOGLE_PHOTOS_ALBUM_ID env var missing")
-			bail = true
-		}
-		if googlePhotosCredentialsPath == "" {
-			log.Print("COABOT_GOOGLE_PHOTOS_CREDENTIALS_FILE env var missing")
-			bail = true
-		}
-		if googlePhotosTokenPath == "" {
-			log.Print("COABOT_GOOGLE_PHOTOS_TOKEN_FILE env var missing")
-			bail = true
-		}
-		if bail {
-			os.Exit(1)
-		}
-	}
-
-	if statePath == "" {
-		log.Fatal("COABOT_STATE_FILE env var missing")
-	}
-
 	if twitterConsumerKey == "" && twitterConsumerSecret == "" && twitterAccessToken == "" && twitterAccessSecret == "" {
 		if mastodonServer == "" && mastodonAccessToken == "" {
 			log.Fatal("either COABOT_MASTODON_* or COABOT_TWITTER_* env vars need to be set")

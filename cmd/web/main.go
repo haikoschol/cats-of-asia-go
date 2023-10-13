@@ -22,7 +22,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
+	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"html/template"
@@ -34,12 +35,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
 	dbHost            = os.Getenv("COA_DB_HOST")
-	dbSSLmode         = os.Getenv("COA_DB_SSLMODE")
+	dbSSLMode         = os.Getenv("COA_DB_SSLMODE")
 	dbName            = os.Getenv("COA_DB_NAME")
 	dbUser            = os.Getenv("COA_DB_USER")
 	dbPassword        = os.Getenv("COA_DB_PASSWORD")
@@ -59,7 +59,7 @@ func main() {
 		log.Fatal("env var COA_MAPBOX_ACCESS_TOKEN not set")
 	}
 
-	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLmode)
+	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	images, err := fetchImages(app.db)
+	images, err := app.db.GetImages()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -142,9 +142,8 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row := app.db.QueryRow(`SELECT path_large, path_medium, path_small FROM images WHERE id = $1;`, id)
-	var pathLarge, pathMedium, pathSmall string
-	if err := row.Scan(&pathLarge, &pathMedium, &pathSmall); err != nil {
+	image, err := app.db.GetImage(int64(id))
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, errors.New("no such catto"))
 			return
@@ -158,11 +157,11 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 	switch strings.ToLower(r.URL.Query().Get("size")) {
 	case "small":
 	case "smol":
-		path = pathSmall
+		path = image.PathSmall
 	case "medium":
-		path = pathMedium
+		path = image.PathMedium
 	default:
-		path = pathLarge
+		path = image.PathLarge
 	}
 
 	stats, err := os.Stat(path)
@@ -188,12 +187,11 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 }
 
 type webApp struct {
-	db *sql.DB
+	db coa.Database
 }
 
-func newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLmode string) (*webApp, error) {
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbName, dbSSLmode)
-	db, err := sql.Open("postgres", dbURL)
+func newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode string) (*webApp, error) {
+	db, err := postgres.NewDatabase(dbUser, dbPassword, dbHost, dbName, postgres.SSLMode(dbSSLMode))
 	if err != nil {
 		return nil, err
 	}
@@ -232,42 +230,4 @@ func serve404(w http.ResponseWriter) {
 		log.Println("failed sending image in http response:", err)
 		return
 	}
-}
-
-func fetchImages(db *sql.DB) ([]coabot.Image, error) {
-	query := `SELECT 
-		i.id AS image_id,
-		i.timestamp,
-		c.latitude,
-		c.longitude,
-		l.city,
-		l.country,
-		l.timezone
-	FROM images AS i
-	JOIN coordinates AS c ON i.coordinate_id = c.id
-	JOIN locations AS l ON c.location_id = l.id`
-
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-
-	var images []coabot.Image
-	for rows.Next() {
-		var img coabot.Image
-		err := rows.Scan(&img.ID, &img.Timestamp, &img.Latitude, &img.Longitude, &img.City, &img.Country, &img.Timezone)
-		if err != nil {
-			return nil, err
-		}
-
-		loc, err := time.LoadLocation(img.Timezone)
-		if err != nil {
-			return nil, err
-		}
-
-		img.Timestamp = img.Timestamp.In(loc)
-		images = append(images, img)
-	}
-
-	return images, rows.Err()
 }

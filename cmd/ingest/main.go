@@ -22,7 +22,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/rwcarlsen/goexif/exif"
@@ -70,7 +70,7 @@ func main() {
 	ingestDirectory(getImageDir(), gmapsClient, db)
 }
 
-func ingestDirectory(dir string, mapsClient *maps.Client, db coabot.Database) {
+func ingestDirectory(dir string, mapsClient *maps.Client, db coa.Database) {
 	images, err := collectFileInfo(dir)
 	if err != nil {
 		log.Fatalf("error while reading image files: %v\n", err)
@@ -113,7 +113,7 @@ func ingestDirectory(dir string, mapsClient *maps.Client, db coabot.Database) {
 	}
 }
 
-func collectFileInfo(dir string) ([]coabot.Image, error) {
+func collectFileInfo(dir string) ([]coa.Image, error) {
 	if verbose {
 		log.Printf("scanning directory %s...", dir)
 	}
@@ -123,11 +123,11 @@ func collectFileInfo(dir string) ([]coabot.Image, error) {
 		log.Fatalf("os.ReadDir(): %v\n", err)
 	}
 
-	var images []coabot.Image
+	var images []coa.Image
 
 	for _, entry := range entries {
 		name := entry.Name()
-		if !coabot.IsSupportedMedia(name) {
+		if !coa.IsSupportedMedia(name) {
 			continue
 		}
 
@@ -170,7 +170,7 @@ func collectFileInfo(dir string) ([]coabot.Image, error) {
 			return nil, fmt.Errorf("unable to read timestamp from  exif data in file at %s: %w", abspath, err)
 		}
 
-		img := coabot.Image{
+		img := coa.Image{
 			PathLarge: abspath,
 			SHA256:    hash,
 			Latitude:  latitude,
@@ -189,8 +189,8 @@ func collectFileInfo(dir string) ([]coabot.Image, error) {
 
 // SetCoordinateID on images for which the data already exists in the db. This avoids unnecessary requests to the
 // Google Maps API.
-func setCoordinateID(images []coabot.Image, db coabot.Database) ([]coabot.Image, error) {
-	var withCoordinateIDs []coabot.Image
+func setCoordinateID(images []coa.Image, db coa.Database) ([]coa.Image, error) {
+	var withCoordinateIDs []coa.Image
 
 	for _, img := range images {
 		coordID, err := db.GetCoordinateID(img.Latitude, img.Longitude)
@@ -209,12 +209,12 @@ func setCoordinateID(images []coabot.Image, db coabot.Database) ([]coabot.Image,
 	return withCoordinateIDs, nil
 }
 
-func fixTimezones(images []coabot.Image, client *maps.Client) ([]coabot.Image, error) {
+func fixTimezones(images []coa.Image, client *maps.Client) ([]coa.Image, error) {
 	if verbose {
 		log.Println("fixing timezones...")
 	}
 
-	var fixed []coabot.Image
+	var fixed []coa.Image
 
 	for _, img := range images {
 		fixedImg := img
@@ -271,12 +271,12 @@ func getTimezoneID(t time.Time, lat float64, lng float64, client *maps.Client) (
 	return time.LoadLocation(res.TimeZoneID)
 }
 
-func reverseGeocode(images []coabot.Image, client *maps.Client) ([]coabot.Image, error) {
+func reverseGeocode(images []coa.Image, client *maps.Client) ([]coa.Image, error) {
 	if verbose {
 		log.Println("reverse geocoding...")
 	}
 
-	var geocoded []coabot.Image
+	var geocoded []coa.Image
 
 	for _, img := range images {
 		imgWithLoc := img
@@ -352,12 +352,12 @@ func reverseGeocode(images []coabot.Image, client *maps.Client) ([]coabot.Image,
 	return geocoded, nil
 }
 
-func resizeImages(images []coabot.Image) ([]coabot.Image, error) {
+func resizeImages(images []coa.Image) ([]coa.Image, error) {
 	if verbose {
 		log.Println("resizing images...")
 	}
 
-	var resized []coabot.Image
+	var resized []coa.Image
 
 	for _, img := range images {
 		imgWithResized := img
@@ -467,7 +467,7 @@ func encodeImage(m image.Image, path string) error {
 	}
 }
 
-func insertImages(images []coabot.Image, db coabot.Database) error {
+func insertImages(images []coa.Image, db coa.Database) error {
 	if verbose {
 		log.Println("inserting images into db...")
 	}
