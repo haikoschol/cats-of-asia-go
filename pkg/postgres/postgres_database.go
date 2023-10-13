@@ -226,6 +226,9 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coa.Platform) (coa.Image, err
 		platform)
 
 	var img coa.Image
+	var coordID int64
+	img.CoordinateID = &coordID
+
 	err := row.Scan(
 		&img.ID,
 		&img.PathLarge,
@@ -233,6 +236,7 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coa.Platform) (coa.Image, err
 		&img.PathSmall,
 		&img.SHA256,
 		&img.Timestamp,
+		img.CoordinateID,
 		&img.Latitude,
 		&img.Longitude,
 		&img.City,
