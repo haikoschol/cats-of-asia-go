@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	coa "github.com/haikoschol/cats-of-asia"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"log"
@@ -57,7 +58,7 @@ func main() {
 	now := time.Now()
 	state := parseStateFile(os.Args[1])
 
-	platformId, err := getPlatformId("Mastodon", db)
+	platformId, err := getPlatformId(coa.Mastodon, db)
 	if err != nil {
 		log.Fatalf("unable to retrieve platform ID for Mastodon from the database: %v\n", err)
 	}
@@ -90,8 +91,8 @@ func insertPost(imgPath string, timestamp time.Time, platformId int64, db *sql.D
 	return nil
 }
 
-func getPlatformId(name string, db *sql.DB) (int64, error) {
-	row := db.QueryRow("SELECT id FROM platforms WHERE name = $1", name)
+func getPlatformId(platform coa.Platform, db *sql.DB) (int64, error) {
+	row := db.QueryRow("SELECT id FROM platforms WHERE name = $1", platform)
 
 	var id int64
 	err := row.Scan(&id)

@@ -19,7 +19,7 @@ package mastodon
 import (
 	"context"
 	"fmt"
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/mattn/go-mastodon"
 	"strings"
 )
@@ -31,7 +31,7 @@ type mastodonPublisher struct {
 	defaultHashtags []string
 }
 
-func New(serverUrl, accessToken string, defaultHashtags []string) (coabot.Publisher, error) {
+func New(serverUrl, accessToken string, defaultHashtags []string) (coa.Publisher, error) {
 	client := mastodon.NewClient(&mastodon.Config{
 		Server:      serverUrl,
 		AccessToken: accessToken,
@@ -47,12 +47,12 @@ func New(serverUrl, accessToken string, defaultHashtags []string) (coabot.Publis
 	}, nil
 }
 
-func (mp *mastodonPublisher) Name() string {
-	return "Mastodon"
+func (mp *mastodonPublisher) Platform() coa.Platform {
+	return coa.Mastodon
 }
 
-func (mp *mastodonPublisher) Publish(item coabot.MediaItem, description string) error {
-	rc, err := item.Read()
+func (mp *mastodonPublisher) Publish(image coa.Image, description string) error {
+	rc, err := image.Read()
 	if err != nil {
 		return err
 	}

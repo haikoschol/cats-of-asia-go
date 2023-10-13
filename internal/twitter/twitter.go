@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
-	coabot "github.com/haikoschol/cats-of-asia"
+	coa "github.com/haikoschol/cats-of-asia"
 	"mime/multipart"
 	"net/http"
 )
@@ -42,7 +42,7 @@ type Credentials struct {
 	AccessSecret   string
 }
 
-func New(creds Credentials) coabot.Publisher {
+func NewPublisher(creds Credentials) coa.Publisher {
 	config := oauth1.NewConfig(creds.ConsumerKey, creds.ConsumerSecret)
 	token := oauth1.NewToken(creds.AccessToken, creds.AccessSecret)
 	httpClient := config.Client(oauth1.NoContext, token)
@@ -57,12 +57,12 @@ func New(creds Credentials) coabot.Publisher {
 	}
 }
 
-func (tp twitterPublisher) Name() string {
-	return "Twitter"
+func (tp twitterPublisher) Platform() coa.Platform {
+	return coa.X
 }
 
-func (tp twitterPublisher) Publish(item coabot.MediaItem, description string) error {
-	upload, err := tp.uploadMedia(item)
+func (tp twitterPublisher) Publish(image coa.Image, description string) error {
+	upload, err := tp.upload(image)
 
 	_, _, err = tp.client.Statuses.Update(description, &twitter.StatusUpdateParams{
 		MediaIds: []int64{upload.MediaId},
@@ -74,22 +74,23 @@ func (tp twitterPublisher) Publish(item coabot.MediaItem, description string) er
 	return nil
 }
 
-type mediaUpload struct {
+type upload struct {
 	MediaId int64 `json:"media_id"`
 }
 
-func (tp twitterPublisher) uploadMedia(item coabot.MediaItem) (*mediaUpload, error) {
+func (tp twitterPublisher) upload(image coa.Image) (*upload, error) {
 	b := &bytes.Buffer{}
 	form := multipart.NewWriter(b)
 
-	fw, err := form.CreateFormFile("media", item.Filename())
+	// this is leaking internal dir structure to X. maybe bad idea
+	fw, err := form.CreateFormFile("media", image.Path())
 	if err != nil {
 		return nil, fmt.Errorf("unable to encode media for upload to Twitter: %w", err)
 	}
 
-	content, err := item.Content()
+	content, err := image.Content()
 	if err != nil {
-		return nil, fmt.Errorf("unable to read content from media item %s: %w", item.Id(), err)
+		return nil, fmt.Errorf("unable to read content from image %s: %w", image.Path(), err)
 	}
 
 	if _, err := fw.Write(content); err != nil {
@@ -101,7 +102,7 @@ func (tp twitterPublisher) uploadMedia(item coabot.MediaItem) (*mediaUpload, err
 	}
 
 	response, err := tp.httpClient.Post(
-		"https://upload.twitter.com/1.1/media/upload.json?media_category=tweet_image", // TODO support video
+		"https://upload.twitter.com/1.1/media/upload.json?media_category=tweet_image",
 		form.FormDataContentType(),
 		bytes.NewReader(b.Bytes()),
 	)
@@ -110,7 +111,7 @@ func (tp twitterPublisher) uploadMedia(item coabot.MediaItem) (*mediaUpload, err
 	}
 	defer response.Body.Close()
 
-	m := &mediaUpload{}
+	m := &upload{}
 	err = json.NewDecoder(response.Body).Decode(m)
 	if err != nil {
 		return nil, fmt.Errorf("unable to decode JSON response to Twitter media upload: %w", err)
