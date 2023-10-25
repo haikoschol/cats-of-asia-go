@@ -17,14 +17,14 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	coa "github.com/haikoschol/cats-of-asia"
-	"github.com/haikoschol/cats-of-asia/internal/bot"
 	"github.com/haikoschol/cats-of-asia/internal/mastodon"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
+	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/matrix-org/gomatrix"
-	_ "image/jpeg"
 	"log"
 	"os"
 )
@@ -43,11 +43,6 @@ var (
 	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
 	twitterAccessToken    = os.Getenv("COABOT_TWITTER_ACCESS_TOKEN")
 	twitterAccessSecret   = os.Getenv("COABOT_TWITTER_ACCESS_SECRET")
-
-	matrixServer      = os.Getenv("COABOT_MATRIX_SERVER")
-	matrixUser        = os.Getenv("COABOT_MATRIX_USER")
-	matrixAccessToken = os.Getenv("COABOT_MATRIX_ACCESS_TOKEN")
-	matrixLogRoomId   = os.Getenv("COABOT_MATRIX_LOG_ROOM_ID")
 )
 
 func main() {
@@ -63,29 +58,61 @@ func main() {
 		log.Fatal(err)
 	}
 
-	matrix, err := gomatrix.NewClient(matrixServer, matrixUser, matrixAccessToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bobTheBot, err := bot.NewBot(db, publishers[0], matrix, matrixLogRoomId, 4242)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if len(publishers) > 1 {
-		for _, publisher := range publishers {
-			bobTheBot.AddPublisher(publisher)
-		}
-	}
-
-	if err := bobTheBot.GoOutIntoTheWorldAndDoBotThings(); err != nil {
+	if err := publish(publishers, db); err != nil {
 		log.Fatal(err)
 	}
 }
 
+func publish(publishers []coa.Publisher, db coa.Database) error {
+	published := false
+	for _, pub := range publishers {
+		img, err := db.GetRandomUnusedImage(pub.Platform())
+		if err != nil {
+			return fmt.Errorf("failed to fetch random unused image for platform '%s' from db: %w", pub.Platform(), err)
+		}
+
+		if err := pub.Publish(img, buildDescription(img)); err != nil {
+			return fmt.Errorf(
+				"failed to publish file '%s' on platform %s: %w",
+				img.PathLarge,
+				pub.Platform(),
+				err,
+			)
+		} else {
+			err := db.InsertPost(img, pub.Platform())
+			if err != nil {
+				return fmt.Errorf(
+					"failed to insert post of file '%s' on platform %s: %w",
+					img.PathLarge,
+					pub.Platform(),
+					err,
+				)
+			}
+			// set this to true regardless of InsertPost() failing since the image was actually posted successfully
+			published = true
+		}
+	}
+
+	if !published {
+		return errors.New("failed to publish media to any platform")
+	}
+
+	return nil
+}
+
+func buildDescription(img coa.Image) string {
+	return fmt.Sprintf(
+		"Another fine feline, captured in %v on %v, %v %d %d",
+		img.Location(),
+		img.Timestamp.Weekday(),
+		img.Timestamp.Month(),
+		img.Timestamp.Day(),
+		img.Timestamp.Year(),
+	)
+}
+
 func buildPublishers() ([]coa.Publisher, error) {
-	publishers := []coa.Publisher{}
+	var publishers []coa.Publisher
 
 	// should be unneccesary to check all mastodon config vars since validateEnv() already did that
 	if mastodonServer != "" {
@@ -109,51 +136,39 @@ func buildPublishers() ([]coa.Publisher, error) {
 	return publishers, nil
 }
 
-// having these funcs in all executables is ugly. should probably use a robust env/config mgmt library
 func validateEnv() {
+	errs := validation.ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword)
+
 	if twitterConsumerKey == "" && twitterConsumerSecret == "" && twitterAccessToken == "" && twitterAccessSecret == "" {
 		if mastodonServer == "" && mastodonAccessToken == "" {
-			log.Fatal("either COABOT_MASTODON_* or COABOT_TWITTER_* env vars need to be set")
+			errs = append(errs, "either COABOT_MASTODON_* or COABOT_TWITTER_* env vars need to be set")
 		}
 		if mastodonServer == "" {
-			log.Fatal("COABOT_MASTODON_SERVER env var missing")
+			errs = append(errs, "COABOT_MASTODON_SERVER env var missing")
 		}
 		if mastodonAccessToken == "" {
-			log.Fatal("COABOT_MASTODON_ACCESS_TOKEN env var missing")
+			errs = append(errs, "COABOT_MASTODON_ACCESS_TOKEN env var missing")
 		}
 	} else {
 		if twitterConsumerKey == "" {
-			log.Fatal("COABOT_TWITTER_CONSUMER_KEY env var missing")
+			errs = append(errs, "COABOT_TWITTER_CONSUMER_KEY env var missing")
 		}
 		if twitterConsumerSecret == "" {
-			log.Fatal("COABOT_TWITTER_CONSUMER_SECRET env var missing")
+			errs = append(errs, "COABOT_TWITTER_CONSUMER_SECRET env var missing")
 		}
 		if twitterAccessToken == "" {
-			log.Fatal("COABOT_TWITTER_ACCESS_TOKEN env var missing")
+			errs = append(errs, "COABOT_TWITTER_ACCESS_TOKEN env var missing")
 		}
 		if twitterAccessSecret == "" {
-			log.Fatal("COABOT_TWITTER_ACCESS_SECRET env var missing")
+			errs = append(errs, "COABOT_TWITTER_ACCESS_SECRET env var missing")
 		}
 	}
 
-	bail := false
-	if matrixServer == "" {
-		log.Print("COABOT_MATRIX_SERVER env var missing")
-		bail = true
+	for _, e := range errs {
+		fmt.Println(e)
 	}
-	if matrixUser == "" {
-		log.Print("COABOT_MATRIX_USER env var missing")
-		bail = true
-	}
-	if matrixAccessToken == "" {
-		log.Print("COABOT_MATRIX_ACCESS_TOKEN env var missing")
-		bail = true
-	}
-	if matrixLogRoomId == "" {
-		log.Print("COABOT_MATRIX_LOG_ROOM_ID env var missing")
-		bail = true
-	}
-	if bail {
+
+	if len(errs) > 0 {
 		os.Exit(1)
 	}
 }

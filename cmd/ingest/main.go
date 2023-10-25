@@ -24,6 +24,7 @@ import (
 	"fmt"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
+	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
@@ -500,32 +501,17 @@ func getImageDir() string {
 }
 
 func validateEnv() {
-	var errors []string
+	errs := validation.ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword)
 
-	if dbHost == "" {
-		errors = append(errors, "COA_DB_HOST env var missing")
-	}
-	if dbSSLMode == "" {
-		errors = append(errors, "COA_DB_SSLMODE env var missing")
-	}
-	if dbName == "" {
-		errors = append(errors, "COA_DB_NAME env var missing")
-	}
-	if dbUser == "" {
-		errors = append(errors, "COA_DB_USER env var missing")
-	}
-	if dbPassword == "" {
-		errors = append(errors, "COA_DB_PASSWORD env var missing")
-	}
 	if googleMapsApiKey == "" {
-		errors = append(errors, "COA_GOOGLE_MAPS_API_KEY env var missing")
+		errs = append(errs, "COA_GOOGLE_MAPS_API_KEY env var missing")
 	}
 
-	for _, e := range errors {
+	for _, e := range errs {
 		fmt.Println(e)
 	}
 
-	if len(errors) > 0 {
+	if len(errs) > 0 {
 		os.Exit(1)
 	}
 }
