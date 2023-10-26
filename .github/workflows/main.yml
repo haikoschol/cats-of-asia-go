@@ -9,10 +9,9 @@ jobs:
     name: Publish
     runs-on: ubuntu-latest
     steps:
-      - id: govulncheck
-        uses: golang/govulncheck-action@v1
+      - uses: actions/setup-go@v4
         with:
-          go-version-input: ${{ vars.GO_VERSION }}
+          go-version: '${{ vars.GO_VERSION }}'
 
       - uses: ko-build/setup-ko@v0.6
       - run: ko build --bare ./cmd/web
