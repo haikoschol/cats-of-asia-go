@@ -15,6 +15,6 @@ jobs:
           go-version-input: ${{ vars.GO_VERSION }}
 
       - uses: ko-build/setup-ko@v0.6
-      - run: ko build --bare ./cmd/web
+      - run: ko build --bare ./cmd/web ./cmd/publish
         env:
           KO_DOCKER_REPO: ghcr.io/haikoschol/cats-of-asia
