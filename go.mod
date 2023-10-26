@@ -1,6 +1,6 @@
 module github.com/haikoschol/cats-of-asia
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/dghubble/go-twitter v0.0.0-20221104224141-912508c3888b
