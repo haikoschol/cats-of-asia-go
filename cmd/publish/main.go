@@ -164,11 +164,5 @@ func validateEnv() {
 		}
 	}
 
-	for _, e := range errs {
-		fmt.Println(e)
-	}
-
-	if len(errs) > 0 {
-		os.Exit(1)
-	}
+	validation.LogErrors(errs, true)
 }

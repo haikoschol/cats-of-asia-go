@@ -16,6 +16,11 @@
 
 package validation
 
+import (
+	"fmt"
+	"os"
+)
+
 func ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword string) (errors []string) {
 	if dbHost == "" {
 		errors = append(errors, "COA_DB_HOST env var missing")
@@ -34,4 +39,14 @@ func ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword string) (errors
 	}
 
 	return errors
+}
+
+func LogErrors(errs []string, exit bool) {
+	for _, e := range errs {
+		fmt.Println(e)
+	}
+
+	if len(errs) > 0 && exit {
+		os.Exit(1)
+	}
 }

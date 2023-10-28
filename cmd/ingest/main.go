@@ -507,11 +507,5 @@ func validateEnv() {
 		errs = append(errs, "COA_GOOGLE_MAPS_API_KEY env var missing")
 	}
 
-	for _, e := range errs {
-		fmt.Println(e)
-	}
-
-	if len(errs) > 0 {
-		os.Exit(1)
-	}
+	validation.LogErrors(errs, true)
 }
