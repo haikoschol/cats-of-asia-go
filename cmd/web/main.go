@@ -27,6 +27,7 @@ import (
 	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
+	"golang.org/x/net/webdav"
 	"html/template"
 	"io"
 	"log"
@@ -45,6 +46,8 @@ var (
 	dbUser            = os.Getenv("COA_DB_USER")
 	dbPassword        = os.Getenv("COA_DB_PASSWORD")
 	mapboxAccessToken = os.Getenv("COA_MAPBOX_ACCESS_TOKEN")
+	webdavUsername    = os.Getenv("COA_WEBDAV_USERNAME")
+	webdavPassword    = os.Getenv("COA_WEBDAV_PASSWORD")
 
 	//go:embed "static"
 	staticEmbed embed.FS
@@ -56,10 +59,11 @@ var (
 )
 
 func main() {
-	if mapboxAccessToken == "" {
-		log.Fatal("env var COA_MAPBOX_ACCESS_TOKEN not set")
 	validateEnv()
 
+	webdavHandler, err := newWebDavHandler(webdavUsername, webdavPassword)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode)
@@ -68,6 +72,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/webdav/", http.StripPrefix("/webdav", webdavHandler))
 	mux.HandleFunc("/images", api.handleImages)
 	mux.HandleFunc("/images/", api.handleGetImage)
 
@@ -200,6 +205,32 @@ func newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode string) (*webApp, e
 	}
 
 	return &webApp{db}, nil
+}
+
+func newWebDavHandler(username, password string) (http.Handler, error) {
+	tempDir, err := os.MkdirTemp("", "coa-webdav")
+	if err != nil {
+		return nil, err
+	}
+
+	handler := &webdav.Handler{
+		FileSystem: webdav.Dir(tempDir),
+		LockSystem: webdav.NewMemLS(),
+	}
+
+	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != username || pass != password {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		handler.ServeHTTP(w, r)
+	})
+
+	return wrappedHandler, nil
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
