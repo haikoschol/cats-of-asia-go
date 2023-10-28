@@ -24,6 +24,7 @@ import (
 	"fmt"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
+	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"html/template"
@@ -57,6 +58,8 @@ var (
 func main() {
 	if mapboxAccessToken == "" {
 		log.Fatal("env var COA_MAPBOX_ACCESS_TOKEN not set")
+	validateEnv()
+
 	}
 
 	api, err := newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode)
@@ -230,4 +233,22 @@ func serve404(w http.ResponseWriter) {
 		log.Println("failed sending image in http response:", err)
 		return
 	}
+}
+
+func validateEnv() {
+	errs := validation.ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword)
+
+	if mapboxAccessToken == "" {
+		errs = append(errs, "env var COA_MAPBOX_ACCESS_TOKEN not set")
+	}
+
+	if webdavUsername == "" {
+		errs = append(errs, "env var COA_WEBDAV_USERNAME not set")
+	}
+
+	if webdavPassword == "" {
+		errs = append(errs, "env var COA_WEBDAV_PASSWORD not set")
+	}
+
+	validation.LogErrors(errs, true)
 }
