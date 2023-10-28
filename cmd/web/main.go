@@ -214,7 +214,7 @@ func newWebDavHandler(username, password string) (http.Handler, error) {
 	}
 
 	handler := &webdav.Handler{
-		FileSystem: webdav.Dir(tempDir),
+		FileSystem: newFileSystem(tempDir),
 		LockSystem: webdav.NewMemLS(),
 	}
 
