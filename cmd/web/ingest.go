@@ -20,16 +20,74 @@ import (
 	"context"
 	"errors"
 	coa "github.com/haikoschol/cats-of-asia"
+	"github.com/haikoschol/cats-of-asia/pkg/ingestion"
 	"golang.org/x/net/webdav"
+	"io/fs"
+	"log"
 	"os"
 )
 
-type fileSystem struct {
-	dir webdav.Dir
+type file struct {
+	name     string
+	path     string
+	mode     os.FileMode
+	created  bool
+	f        webdav.File
+	ingestor *ingestion.Ingestor
 }
 
-func newFileSystem(path string) *fileSystem {
-	return &fileSystem{dir: webdav.Dir(path)}
+func (f *file) Read(p []byte) (n int, err error) {
+	return f.f.Read(p)
+}
+
+func (f *file) Seek(offset int64, whence int) (int64, error) {
+	return f.f.Seek(offset, whence)
+}
+
+func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
+	return f.f.Readdir(count)
+}
+
+func (f *file) Stat() (fs.FileInfo, error) {
+	return f.f.Stat()
+}
+
+func (f *file) Write(p []byte) (n int, err error) {
+	return f.f.Write(p)
+}
+
+func (f *file) Close() error {
+	if err := f.f.Close(); err != nil {
+		return err
+	}
+
+	if f.mode.IsRegular() && f.created {
+		// TODO only pass the new file to Ingestor
+		// TODO offload ingestion onto a goroutine worker pool (maybe put impl in Ingestor)
+		err := f.ingestor.IngestDirectory(f.path)
+		if err != nil {
+			// TODO remove or pass a logger or something
+			log.Printf("failed to ingest uploaded image: %v\n", err)
+			return err // returning an error causes the webdav request handler to respond with 404
+		}
+		// TODO implement removing temp file after move to Google Drive or object storage
+	}
+
+	return nil
+}
+
+type fileSystem struct {
+	path     string
+	dir      webdav.Dir
+	ingestor *ingestion.Ingestor
+}
+
+func newFileSystem(path string, ingestor *ingestion.Ingestor) *fileSystem {
+	return &fileSystem{
+		path:     path,
+		dir:      webdav.Dir(path),
+		ingestor: ingestor,
+	}
 }
 
 func (fs *fileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
@@ -41,7 +99,19 @@ func (fs *fileSystem) OpenFile(ctx context.Context, name string, flag int, perm 
 		return nil, errors.New("unsupported file type")
 	}
 
-	return fs.dir.OpenFile(ctx, name, flag, perm)
+	wf, err := fs.dir.OpenFile(ctx, name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+
+	return &file{
+		name:     name,
+		path:     fs.path,
+		mode:     perm,
+		created:  flag&os.O_CREATE != 0,
+		f:        wf,
+		ingestor: fs.ingestor,
+	}, nil
 }
 
 func (fs *fileSystem) RemoveAll(ctx context.Context, name string) error {
