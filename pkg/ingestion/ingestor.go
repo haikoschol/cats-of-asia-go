@@ -26,12 +26,19 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/rwcarlsen/goexif/exif"
 	"golang.org/x/image/draw"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 	"googlemaps.github.io/maps"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"log"
+	"mime"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,7 +47,6 @@ import (
 )
 
 const (
-	scaledImagesDir   = "scaled"
 	imageWidthSmall   = 300
 	imageWidthMedium  = 600
 	imageSuffixSmall  = "-small"
@@ -48,35 +54,78 @@ const (
 )
 
 type Ingestor struct {
-	db         coa.Database
-	mapsClient *maps.Client
-	logger     func(format string, v ...any)
-	verbose    bool
+	db       coa.Database
+	gmaps    *maps.Client
+	gdrive   *drive.Service
+	folderID string
+	logger   func(format string, v ...any)
+	verbose  bool
 }
 
-func NewIngestor(db coa.Database, mapsClient *maps.Client, logger func(string, ...any), verbose bool) *Ingestor {
-	return &Ingestor{db, mapsClient, logger, verbose}
+type Logger func(string, ...any)
+
+type GoogleCredentials struct {
+	MapsAPIKey           string
+	SvcAccountEmail      string
+	SvcAccountPrivateKey string
 }
 
-func (i *Ingestor) IngestDirectory(dir string) error {
+func NewIngestor(
+	db coa.Database,
+	credentials GoogleCredentials,
+	folderID string,
+	logger Logger,
+	verbose bool,
+) (*Ingestor, error) {
+
+	gmaps, err := maps.NewClient(maps.WithAPIKey(credentials.MapsAPIKey))
+	if err != nil {
+		return nil, fmt.Errorf("unable to instantiate Google Maps client: %w", err)
+	}
+
+	config := &jwt.Config{
+		Email:      credentials.SvcAccountEmail,
+		PrivateKey: []byte(credentials.SvcAccountPrivateKey),
+		TokenURL:   google.JWTTokenURL,
+		Scopes:     []string{drive.DriveScope},
+	}
+
+	ctx := context.Background()
+	client := config.Client(ctx)
+	gdrive, err := drive.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create Google Drive service: %w", err)
+	}
+
+	return &Ingestor{
+		db,
+		gmaps,
+		gdrive,
+		folderID,
+		logger,
+		verbose,
+	}, nil
+}
+
+func (i *Ingestor) IngestDirectory(dir string) ([]coa.Image, error) {
 	images, err := i.collectFileInfo(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	images, err = i.db.RemoveKnownImages(images)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(images) == 0 && i.verbose {
 		i.logger("no new images found at %s\n", dir)
-		return nil
+		return images, nil
 	}
 
 	images, err = i.resizeImages(images)
 	if err != nil {
-		return fmt.Errorf("error while resizing images: %w", err)
+		return nil, fmt.Errorf("error while resizing images: %w", err)
 	}
 
 	// This needs to happen before fixing timezones and geocoding, to avoid redundant requests to the Google Maps API.
@@ -87,20 +136,25 @@ func (i *Ingestor) IngestDirectory(dir string) error {
 
 	images, err = i.fixTimezones(images)
 	if err != nil {
-		return fmt.Errorf("error while fixing timezones: %w", err)
+		return nil, fmt.Errorf("error while fixing timezones: %w", err)
 	}
 
 	images, err = i.reverseGeocode(images)
 	if err != nil {
-		return fmt.Errorf("error while reverse geocoding: %w", err)
+		return nil, fmt.Errorf("error while reverse geocoding: %w", err)
+	}
+
+	images, err = i.uploadImages(images)
+	if err != nil {
+		return nil, fmt.Errorf("error while uploading files to Google Drive: %w", err)
 	}
 
 	err = i.insertImages(images)
 	if err != nil {
-		return fmt.Errorf("error while inserting new images into db: %w", err)
+		return nil, fmt.Errorf("error while inserting new images into db: %w", err)
 	}
 
-	return nil
+	return images, nil
 }
 
 func (i *Ingestor) collectFileInfo(dir string) ([]coa.Image, error) {
@@ -255,7 +309,7 @@ func (i *Ingestor) getTimezoneID(t time.Time, lat float64, lng float64) (*time.L
 		Language:  "English",
 	}
 
-	res, err := i.mapsClient.Timezone(context.Background(), &req)
+	res, err := i.gmaps.Timezone(context.Background(), &req)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +342,7 @@ func (i *Ingestor) reverseGeocode(images []coa.Image) ([]coa.Image, error) {
 			},
 		}
 
-		locs, err := i.mapsClient.ReverseGeocode(context.Background(), r)
+		locs, err := i.gmaps.ReverseGeocode(context.Background(), r)
 		if err != nil {
 			return nil, err
 		}
@@ -400,10 +454,6 @@ func (i *Ingestor) resizeImage(path, suffix string, width int) (string, error) {
 	basename := filepath.Base(path)
 	ext := filepath.Ext(path)
 	withoutExt := strings.TrimSuffix(basename, ext)
-
-	dir = filepath.Join(dir, scaledImagesDir)
-	_ = os.Mkdir(dir, 0755)
-
 	pathResized := filepath.Join(dir, fmt.Sprintf("%s%s%s", withoutExt, suffix, ext))
 
 	// make sure the resized file does not exist already and there is no directory with the same name
@@ -436,6 +486,80 @@ func (i *Ingestor) resizeImage(path, suffix string, width int) (string, error) {
 	}
 
 	return pathResized, nil
+}
+
+func (i *Ingestor) uploadImages(images []coa.Image) ([]coa.Image, error) {
+	var withURLs []coa.Image
+
+	if i.verbose {
+		i.logger("uploading %d images to Google Drive...\n", len(images))
+	}
+
+	for _, img := range images {
+		imgWithURLs := img
+		var err error
+
+		imgWithURLs.URLLarge, err = i.uploadFile(imgWithURLs.PathLarge)
+		if err != nil {
+			return nil, err
+		}
+
+		imgWithURLs.URLMedium, err = i.uploadFile(imgWithURLs.PathMedium)
+		if err != nil {
+			return nil, err
+		}
+
+		imgWithURLs.URLSmall, err = i.uploadFile(imgWithURLs.PathSmall)
+		if err != nil {
+			return nil, err
+		}
+
+		withURLs = append(withURLs, imgWithURLs)
+	}
+
+	if i.verbose {
+		i.logger("done\n")
+	}
+
+	return withURLs, nil
+}
+
+// uploadFile uploads a local file at path to Google Drive and returns the URL to the file.
+func (i *Ingestor) uploadFile(path string) (*url.URL, error) {
+	src, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open file %s: %w", path, err)
+	}
+	defer i.close(src)
+
+	dst := &drive.File{
+		Name:    filepath.Base(path),
+		Parents: []string{i.folderID},
+	}
+
+	res, err := i.createGDriveFile(path, src, dst)
+	if err != nil {
+		return nil, fmt.Errorf("unable to upload file %s to Google Drive folder %s: %w", path, i.folderID, err)
+	}
+
+	url, err := url.Parse(res.WebContentLink)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse Google Drive file URL %s: %w", res.WebContentLink, err)
+	}
+
+	// Only keep the "id" query parameter. The API also returns at least "export=download" which causes the browser
+	// to download the image instead of displaying it.
+	q := url.Query()
+	url.RawQuery = fmt.Sprintf("id=%s", q.Get("id"))
+
+	return url, nil
+}
+
+func (i *Ingestor) createGDriveFile(path string, src *os.File, dest *drive.File) (*drive.File, error) {
+	return i.gdrive.Files.Create(dest).
+		Media(src, googleapi.ContentType(mime.TypeByExtension(strings.ToLower(filepath.Ext(path))))).
+		Fields("webContentLink").
+		Do()
 }
 
 func decodeImage(path string) (image.Image, error) {

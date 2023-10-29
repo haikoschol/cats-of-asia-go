@@ -22,7 +22,6 @@ import (
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
-	"googlemaps.github.io/maps"
 	"log"
 	"os"
 )
@@ -36,7 +35,10 @@ var (
 	dbUser     = os.Getenv("COA_DB_USER")
 	dbPassword = os.Getenv("COA_DB_PASSWORD")
 
-	googleMapsApiKey = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
+	googleMapsAPIKey     = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
+	svcAccountEmail      = os.Getenv("COA_GOOGLE_DRIVE_EMAIL")
+	svcAccountPrivateKey = os.Getenv("COA_GOOGLE_DRIVE_PRIVATE_KEY")
+	gdriveFolderID       = os.Getenv("COA_GOOGLE_DRIVE_FOLDER_ID")
 )
 
 func main() {
@@ -47,16 +49,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	gmapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
-	if err != nil {
-		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
+	creds := ingestion.GoogleCredentials{
+		MapsAPIKey:           googleMapsAPIKey,
+		SvcAccountEmail:      svcAccountEmail,
+		SvcAccountPrivateKey: svcAccountPrivateKey,
 	}
 
-	i := ingestion.NewIngestor(db, gmapsClient, log.Printf, verbose)
-	err = i.IngestDirectory(getImageDir())
+	i, err := ingestion.NewIngestor(db, creds, gdriveFolderID, log.Printf, verbose)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	images, err := i.IngestDirectory(getImageDir())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("ingested %d new images\n", len(images))
 }
 
 func getImageDir() string {
@@ -79,8 +88,20 @@ func getImageDir() string {
 func validateEnv() {
 	errs := validation.ValidateDbEnv(dbHost, dbSSLMode, dbName, dbUser, dbPassword)
 
-	if googleMapsApiKey == "" {
+	if googleMapsAPIKey == "" {
 		errs = append(errs, "COA_GOOGLE_MAPS_API_KEY env var missing")
+	}
+
+	if svcAccountEmail == "" {
+		errs = append(errs, "env var COA_GOOGLE_DRIVE_EMAIL not set")
+	}
+
+	if svcAccountPrivateKey == "" {
+		errs = append(errs, "env var COA_GOOGLE_DRIVE_PRIVATE_KEY not set")
+	}
+
+	if gdriveFolderID == "" {
+		errs = append(errs, "COA_GOOGLE_DRIVE_FOLDER_ID env var missing")
 	}
 
 	validation.LogErrors(errs, true)

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/ingestion"
 	"golang.org/x/net/webdav"
@@ -64,15 +65,44 @@ func (f *file) Close() error {
 	if f.mode.IsRegular() && f.created {
 		// TODO only pass the new file to Ingestor
 		// TODO offload ingestion onto a goroutine worker pool (maybe put impl in Ingestor)
-		err := f.ingestor.IngestDirectory(f.path)
+		images, err := f.ingestor.IngestDirectory(f.path)
 		if err != nil {
 			// TODO remove or pass a logger or something
 			log.Printf("failed to ingest uploaded image: %v\n", err)
 			return err // returning an error causes the webdav request handler to respond with 404
 		}
-		// TODO implement removing temp file after move to Google Drive or object storage
+
+		if err := f.cleanup(images); err != nil {
+			// TODO remove or pass a logger or something
+			log.Println(err)
+			return err
+		}
 	}
 
+	return nil
+}
+
+func (f *file) cleanup(images []coa.Image) error {
+	// the uploaded file was already found in the database
+	if len(images) == 0 {
+		if err := os.Remove(f.path); err != nil {
+			return fmt.Errorf("failed to delete uploaded file %s: %w", f.path, err)
+		}
+	} else {
+		for _, img := range images {
+			if err := os.Remove(img.PathLarge); err != nil {
+				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathLarge, err)
+			}
+
+			if err := os.Remove(img.PathMedium); err != nil {
+				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathMedium, err)
+			}
+
+			if err := os.Remove(img.PathSmall); err != nil {
+				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathSmall, err)
+			}
+		}
+	}
 	return nil
 }
 
