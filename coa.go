@@ -17,26 +17,31 @@
 package coa
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 )
 
 type Image struct {
-	ID           int64     `json:"id"`
-	CoordinateID *int64    `json:"-"`
-	PathLarge    string    `json:"-"`
-	PathMedium   string    `json:"-"`
-	PathSmall    string    `json:"-"`
-	SHA256       string    `json:"sha256"`
-	Timestamp    time.Time `json:"timestamp"`
-	Timezone     string    `json:"-"`
-	Latitude     float64   `json:"latitude"`
-	Longitude    float64   `json:"longitude"`
-	City         string    `json:"city"`
-	Country      string    `json:"country"`
+	ID           int64
+	CoordinateID *int64
+	PathLarge    string
+	PathMedium   string
+	PathSmall    string
+	URLLarge     *url.URL
+	URLMedium    *url.URL
+	URLSmall     *url.URL
+	SHA256       string
+	Timestamp    time.Time
+	Timezone     string
+	Latitude     float64
+	Longitude    float64
+	City         string
+	Country      string
 }
 
 func (img Image) Path() string {
@@ -71,6 +76,32 @@ func (img Image) Location() string {
 	}
 
 	return fmt.Sprintf("%s, %s", img.City, img.Country)
+}
+
+func (img Image) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID        int64     `json:"id"`
+		URLLarge  string    `json:"urlLarge"`
+		URLMedium string    `json:"urlMedium"`
+		URLSmall  string    `json:"urlSmall"`
+		SHA256    string    `json:"sha256"`
+		Timestamp time.Time `json:"timestamp"`
+		Latitude  float64   `json:"latitude"`
+		Longitude float64   `json:"longitude"`
+		City      string    `json:"city"`
+		Country   string    `json:"country"`
+	}{
+		ID:        img.ID,
+		URLLarge:  img.URLLarge.String(),
+		URLMedium: img.URLMedium.String(),
+		URLSmall:  img.URLSmall.String(),
+		SHA256:    img.SHA256,
+		Timestamp: img.Timestamp,
+		Latitude:  img.Latitude,
+		Longitude: img.Longitude,
+		City:      img.City,
+		Country:   img.Country,
+	})
 }
 
 type Platform string

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/lib/pq"
+	"net/url"
 	"time"
 )
 
@@ -105,9 +106,9 @@ func (d *pgDatabase) GetImage(id int64) (coa.Image, error) {
 	row := d.db.QueryRow(`
 		SELECT 
 			i.id AS image_id,
-			i.path_large,
-			i.path_medium,
-			i.path_small,
+			i.url_large,
+			i.url_medium,
+			i.url_small,
 			i.sha256,
 			i.timestamp,
 			c.latitude,
@@ -122,11 +123,13 @@ func (d *pgDatabase) GetImage(id int64) (coa.Image, error) {
 		id)
 
 	var img coa.Image
+	var ul, um, us string
+
 	err := row.Scan(
 		&img.ID,
-		&img.PathLarge,
-		&img.PathMedium,
-		&img.PathSmall,
+		&ul,
+		&um,
+		&us,
 		&img.SHA256,
 		&img.Timestamp,
 		&img.Latitude,
@@ -139,6 +142,21 @@ func (d *pgDatabase) GetImage(id int64) (coa.Image, error) {
 		return img, err
 	}
 
+	img.URLLarge, err = url.Parse(ul)
+	if err != nil {
+		return img, err
+	}
+
+	img.URLMedium, err = url.Parse(um)
+	if err != nil {
+		return img, err
+	}
+
+	img.URLSmall, err = url.Parse(us)
+	if err != nil {
+		return img, err
+	}
+
 	return fixTimezone(img)
 }
 
@@ -146,12 +164,11 @@ func (d *pgDatabase) GetImages() ([]coa.Image, error) {
 	rows, err := d.db.Query(`
 		SELECT 
 			i.id AS image_id,
-			i.path_large,
-			i.path_medium,
-			i.path_small,
+			i.url_large,
+			i.url_medium,
+			i.url_small,
 			i.sha256,
 			i.timestamp,
-			i.coordinate_id,
 			c.latitude,
 			c.longitude,
 			l.city,
@@ -166,18 +183,18 @@ func (d *pgDatabase) GetImages() ([]coa.Image, error) {
 	}
 
 	var images []coa.Image
-	var coordID int64
+	var ul, um, us string
 
 	for rows.Next() {
 		var img coa.Image
+
 		err := rows.Scan(
 			&img.ID,
-			&img.PathLarge,
-			&img.PathMedium,
-			&img.PathSmall,
+			&ul,
+			&um,
+			&us,
 			&img.SHA256,
 			&img.Timestamp,
-			&coordID,
 			&img.Latitude,
 			&img.Longitude,
 			&img.City,
@@ -188,7 +205,20 @@ func (d *pgDatabase) GetImages() ([]coa.Image, error) {
 			return nil, err
 		}
 
-		img.CoordinateID = &coordID
+		img.URLLarge, err = url.Parse(ul)
+		if err != nil {
+			return nil, err
+		}
+
+		img.URLMedium, err = url.Parse(um)
+		if err != nil {
+			return nil, err
+		}
+
+		img.URLSmall, err = url.Parse(us)
+		if err != nil {
+			return nil, err
+		}
 
 		img, err = fixTimezone(img)
 		if err != nil {
@@ -204,12 +234,11 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coa.Platform) (coa.Image, err
 	row := d.db.QueryRow(`
 		SELECT 
 			i.id AS image_id,
-			i.path_large,
-			i.path_medium,
-			i.path_small,
+			i.url_large,
+			i.url_medium,
+			i.url_small,
 			i.sha256,
 			i.timestamp,
-			i.coordinate_id,
 			c.latitude,
 			c.longitude,
 			l.city,
@@ -226,23 +255,41 @@ func (d *pgDatabase) GetRandomUnusedImage(platform coa.Platform) (coa.Image, err
 		platform)
 
 	var img coa.Image
-	var coordID int64
-	img.CoordinateID = &coordID
+	var ul, um, us string
 
 	err := row.Scan(
 		&img.ID,
-		&img.PathLarge,
-		&img.PathMedium,
-		&img.PathSmall,
+		&ul,
+		&um,
+		&us,
 		&img.SHA256,
 		&img.Timestamp,
-		img.CoordinateID,
 		&img.Latitude,
 		&img.Longitude,
 		&img.City,
 		&img.Country,
 		&img.Timezone)
-	return img, err
+
+	if err != nil {
+		return img, err
+	}
+
+	img.URLLarge, err = url.Parse(ul)
+	if err != nil {
+		return img, err
+	}
+
+	img.URLMedium, err = url.Parse(um)
+	if err != nil {
+		return img, err
+	}
+
+	img.URLSmall, err = url.Parse(us)
+	if err != nil {
+		return img, err
+	}
+
+	return fixTimezone(img)
 }
 
 func (d *pgDatabase) GetUnusedImageCount(platform coa.Platform) (int, error) {
@@ -269,7 +316,7 @@ func (d *pgDatabase) RemoveKnownImages(images []coa.Image) ([]coa.Image, error) 
 		hashes = append(hashes, img.SHA256)
 	}
 
-	rows, err := d.db.Query(`SELECT path_large, sha256 FROM images WHERE sha256 = ANY($1)`, pq.Array(hashes))
+	rows, err := d.db.Query(`SELECT url_large, sha256 FROM images WHERE sha256 = ANY($1)`, pq.Array(hashes))
 	if err != nil {
 		return nil, err
 	}
@@ -316,12 +363,12 @@ func (d *pgDatabase) InsertImages(images []coa.Image) error {
 		}
 		_, err := d.db.Exec(
 			`INSERT INTO
-    			images(path_large, path_medium, path_small, sha256, timestamp, coordinate_id)
+    			images(url_large, url_medium, url_small, sha256, timestamp, coordinate_id)
 			VALUES
 			    ($1, $2, $3, $4, $5, $6)`,
-			img.PathLarge,
-			img.PathMedium,
-			img.PathSmall,
+			img.URLLarge.String(),
+			img.URLMedium.String(),
+			img.URLSmall.String(),
 			img.SHA256,
 			img.Timestamp,
 			img.CoordinateID,

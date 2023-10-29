@@ -29,7 +29,6 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 	"golang.org/x/net/webdav"
-	"googlemaps.github.io/maps"
 	"html/template"
 	"io"
 	"log"
@@ -50,14 +49,13 @@ var (
 
 	mapboxAccessToken = os.Getenv("COA_MAPBOX_ACCESS_TOKEN")
 
-	googleMapsApiKey = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
+	googleMapsAPIKey     = os.Getenv("COA_GOOGLE_MAPS_API_KEY")
+	svcAccountEmail      = os.Getenv("COA_GOOGLE_DRIVE_EMAIL")
+	svcAccountPrivateKey = os.Getenv("COA_GOOGLE_DRIVE_PRIVATE_KEY")
+	gdriveFolderID       = os.Getenv("COA_GOOGLE_DRIVE_FOLDER_ID")
 
 	webdavUsername = os.Getenv("COA_WEBDAV_USERNAME")
 	webdavPassword = os.Getenv("COA_WEBDAV_PASSWORD")
-
-	// TODO This is where webdav puts uploaded files. After moving to Google Drive or object store, use it for the
-	// directory name there and always use os.MkdirTemp() for webdav uploads.
-	imageDirectory = os.Getenv("COA_IMAGE_DIR")
 
 	//go:embed "static"
 	staticEmbed embed.FS
@@ -76,12 +74,16 @@ func main() {
 		log.Fatalf("unable to connect to database: %v\n", err)
 	}
 
-	gmapsClient, err := maps.NewClient(maps.WithAPIKey(googleMapsApiKey))
-	if err != nil {
-		log.Fatalf("unable to instantiate Google Maps client: %v\n", err)
+	creds := ingestion.GoogleCredentials{
+		MapsAPIKey:           googleMapsAPIKey,
+		SvcAccountEmail:      svcAccountEmail,
+		SvcAccountPrivateKey: svcAccountPrivateKey,
 	}
 
-	ingestor := ingestion.NewIngestor(db, gmapsClient, log.Printf, false)
+	ingestor, err := ingestion.NewIngestor(db, creds, gdriveFolderID, log.Printf, false)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	webdavHandler, err := newWebDavHandler(webdavUsername, webdavPassword, ingestor)
 	if err != nil {
@@ -230,13 +232,9 @@ func newWebApp(dbUser, dbPassword, dbHost, dbName, dbSSLMode string) (*webApp, e
 }
 
 func newWebDavHandler(username, password string, ingestor *ingestion.Ingestor) (http.Handler, error) {
-	imgDir := imageDirectory
-	if imgDir == "" {
-		var err error
-		imgDir, err = os.MkdirTemp("", "coa-webdav")
-		if err != nil {
-			return nil, err
-		}
+	imgDir, err := os.MkdirTemp("", "coa-webdav")
+	if err != nil {
+		return nil, err
 	}
 
 	handler := &webdav.Handler{
@@ -299,8 +297,20 @@ func validateEnv() {
 		errs = append(errs, "env var COA_MAPBOX_ACCESS_TOKEN not set")
 	}
 
-	if googleMapsApiKey == "" {
+	if svcAccountEmail == "" {
+		errs = append(errs, "env var COA_GOOGLE_DRIVE_EMAIL not set")
+	}
+
+	if svcAccountPrivateKey == "" {
+		errs = append(errs, "env var COA_GOOGLE_DRIVE_PRIVATE_KEY not set")
+	}
+
+	if googleMapsAPIKey == "" {
 		errs = append(errs, "env var COA_GOOGLE_MAPS_API_KEY not set")
+	}
+
+	if gdriveFolderID == "" {
+		errs = append(errs, "COA_GOOGLE_DRIVE_FOLDER_ID env var missing")
 	}
 
 	if webdavUsername == "" {
