@@ -33,14 +33,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
   <nav>
     <ul>
       <li><strong>Cats Of Asia</strong></li>
-<!--      Maybe enable filtering favorites by place-->
-<!--      <li>-->
-<!--        <details id="placesDropdown" role="list" style="z-index: 1000">-->
-<!--          <summary aria-haspopup="listbox" role="button">Places</summary>-->
-<!--          <ul id="placesUl" role="listbox">-->
-<!--          </ul>-->
-<!--        </details>-->
-<!--      </li>-->
+      <!--      Maybe enable filtering favorites by place-->
+      <!--      <li>-->
+      <!--        <details id="placesDropdown" role="list" style="z-index: 1000">-->
+      <!--          <summary aria-haspopup="listbox" role="button">Places</summary>-->
+      <!--          <ul id="placesUl" role="listbox">-->
+      <!--          </ul>-->
+      <!--        </details>-->
+      <!--      </li>-->
       <li>
         <a href="/">Map</a>
       </li>
@@ -66,24 +66,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
           return button;
       }
 
-      function renderFavorites() {
+      function renderFavorites(images) {
           const favs = document.getElementById('favsContainer');
 
-          favorites.toArray().forEach(imageId => {
+          favorites.toArray().forEach(id => {
               const img = document.createElement('img');
-              img.src = `/images/${imageId}?size=medium`;
-              img.alt = `cat photo #${imageId}`;
+              img.src = images[id].urlMedium;
+              img.alt = `cat photo #${id}`;
               img.className = 'fav-img';
 
               const a = document.createElement('a');
-              a.href = `/images/${imageId}`
+              a.href = images[id].urlLarge;
               a.appendChild(img);
 
               const card = document.createElement('article');
               card.className = 'fav-card';
               const footer = document.createElement('footer');
               // TODO add "show on map" link
-              footer.appendChild(makeRemoveButton(imageId, card));
+              footer.appendChild(makeRemoveButton(id, card));
 
               card.appendChild(a);
               card.appendChild(footer);
@@ -105,7 +105,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.-->
       }
 
       updateVisibility();
-      renderFavorites();
+
+      fetch('/images')
+          .then(response => response.json())
+          .then(images => {
+              const byId = {};
+              images.forEach(img => byId[img.id] = img);
+              renderFavorites(byId);
+          })
   </script>
 </main>
 </body>

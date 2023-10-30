@@ -23,11 +23,11 @@ let images = [];
 let map = null;
 
 function makePopupContent(image, map) {
-    const {id, timestamp} = image;
+    const {id, urlSmall, urlLarge, timestamp} = image;
     const date = new Date(timestamp).toDateString();
     const location = formatLocation(image);
     const outer = document.createElement('div');
-    const catImage = makeImageLink(`images/${id}`, `images/${id}?size=smol`, `photo #${id}, showing one or more cats`);
+    const catImage = makeImageLink(urlLarge, urlSmall, `photo #${id}, showing one or more cats`);
     outer.appendChild(catImage);
 
     const footer = document.createElement('div');
