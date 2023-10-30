@@ -32,10 +32,8 @@ import (
 	"html/template"
 	"io"
 	"log"
-	"mime"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -185,37 +183,18 @@ func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var path string
+	var url string
 	switch strings.ToLower(r.URL.Query().Get("size")) {
 	case "small":
 	case "smol":
-		path = image.PathSmall
+		url = image.URLSmall.String()
 	case "medium":
-		path = image.PathMedium
+		url = image.URLMedium.String()
 	default:
-		path = image.PathLarge
+		url = image.URLLarge.String()
 	}
 
-	stats, err := os.Stat(path)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer f.Close()
-
-	w.Header().Add("Content-Type", mime.TypeByExtension(strings.ToLower(filepath.Ext(path))))
-	w.Header().Add("Content-Length", fmt.Sprintf("%d", stats.Size()))
-
-	if _, err := io.Copy(w, f); err != nil {
-		log.Println("failed sending image in http response:", err)
-		return
-	}
+	http.Redirect(w, r, url, http.StatusMovedPermanently)
 }
 
 type webApp struct {
