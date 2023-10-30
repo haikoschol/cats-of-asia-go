@@ -26,6 +26,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path"
 )
 
 type file struct {
@@ -83,23 +84,25 @@ func (f *file) Close() error {
 }
 
 func (f *file) cleanup(images []coa.Image) error {
+	msg := "failed to delete uploaded file %s: %w"
 	// the uploaded file was already found in the database
 	if len(images) == 0 {
-		if err := os.Remove(f.path); err != nil {
-			return fmt.Errorf("failed to delete uploaded file %s: %w", f.path, err)
+		p := path.Join(f.path, f.name)
+		if err := os.Remove(p); err != nil {
+			return fmt.Errorf(msg, p, err)
 		}
 	} else {
 		for _, img := range images {
 			if err := os.Remove(img.PathLarge); err != nil {
-				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathLarge, err)
+				return fmt.Errorf(msg, img.PathLarge, err)
 			}
 
 			if err := os.Remove(img.PathMedium); err != nil {
-				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathMedium, err)
+				return fmt.Errorf(msg, img.PathMedium, err)
 			}
 
 			if err := os.Remove(img.PathSmall); err != nil {
-				return fmt.Errorf("failed to delete uploaded file %s: %w", img.PathSmall, err)
+				return fmt.Errorf(msg, img.PathSmall, err)
 			}
 		}
 	}
