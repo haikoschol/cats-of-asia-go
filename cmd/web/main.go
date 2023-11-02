@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/ingestion"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
@@ -55,6 +56,8 @@ var (
 	webdavUsername = os.Getenv("COA_WEBDAV_USERNAME")
 	webdavPassword = os.Getenv("COA_WEBDAV_PASSWORD")
 
+	sentryDSN = os.Getenv("SENTRY_DSN")
+
 	//go:embed "static"
 	staticEmbed embed.FS
 	staticFs    http.FileSystem = http.FS(staticEmbed)
@@ -66,6 +69,10 @@ var (
 
 func main() {
 	validateEnv()
+
+	if err := initSentry(); err != nil {
+		log.Fatal(err)
+	}
 
 	db, err := postgres.NewDatabase(dbUser, dbPassword, dbHost, dbName, postgres.SSLMode(dbSSLMode))
 	if err != nil {
@@ -301,4 +308,17 @@ func validateEnv() {
 	}
 
 	validation.LogErrors(errs, true)
+}
+
+func initSentry() error {
+	if sentryDSN != "" {
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			TracesSampleRate: 1.0,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
