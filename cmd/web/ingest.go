@@ -20,11 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/ingestion"
 	"golang.org/x/net/webdav"
 	"io/fs"
-	"log"
 	"os"
 	"path"
 )
@@ -68,14 +68,12 @@ func (f *file) Close() error {
 		// TODO offload ingestion onto a goroutine worker pool (maybe put impl in Ingestor)
 		images, err := f.ingestor.IngestDirectory(f.path)
 		if err != nil {
-			// TODO remove or pass a logger or something
-			log.Printf("failed to ingest uploaded image: %v\n", err)
+			sentry.CaptureMessage(fmt.Sprintf("failed to ingest uploaded image: %v", err))
 			return err // returning an error causes the webdav request handler to respond with 404
 		}
 
 		if err := f.cleanup(images); err != nil {
-			// TODO remove or pass a logger or something
-			log.Println(err)
+			sentry.CaptureException(err)
 			return err
 		}
 	}
@@ -129,6 +127,8 @@ func (fs *fileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) 
 
 func (fs *fileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
 	if !coa.IsSupportedMedia(name) {
+		// TODO remove, just for testing sentry integration
+		sentry.CaptureMessage(fmt.Sprintf("someone tried to upload an unsupported file type: %s. i call shenanigans", name))
 		return nil, errors.New("unsupported file type")
 	}
 
