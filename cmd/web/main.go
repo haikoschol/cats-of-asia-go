@@ -101,8 +101,8 @@ func main() {
 	mux.Handle("/static/", http.FileServer(staticFs))
 	mux.HandleFunc("/", api.handleIndex)
 
-	log.Print("Starting server on :4000")
-	log.Fatal(http.ListenAndServe(":4000", mux))
+	log.Print("Starting server on :8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
 func (app *webApp) handleIndex(w http.ResponseWriter, r *http.Request) {
