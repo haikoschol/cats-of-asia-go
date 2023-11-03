@@ -28,7 +28,8 @@ import (
 type SSLMode string
 
 const (
-	VerifyFull SSLMode = "verify-full"
+	Require    SSLMode = "require"
+	VerifyFull         = "verify-full"
 	VerifyCA           = "verify-ca"
 	Disable            = "disable"
 )
@@ -400,6 +401,10 @@ func (d *pgDatabase) InsertPost(image coa.Image, platform coa.Platform) error {
 		return err
 	}
 	return nil
+}
+
+func (d *pgDatabase) Close() error {
+	return d.db.Close()
 }
 
 func fixTimezone(image coa.Image) (coa.Image, error) {
