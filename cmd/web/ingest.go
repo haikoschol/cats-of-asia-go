@@ -127,8 +127,6 @@ func (fs *fileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) 
 
 func (fs *fileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
 	if !coa.IsSupportedMedia(name) {
-		// TODO remove, just for testing sentry integration
-		sentry.CaptureMessage(fmt.Sprintf("someone tried to upload an unsupported file type: %s. i call shenanigans", name))
 		return nil, errors.New("unsupported file type")
 	}
 
