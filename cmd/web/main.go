@@ -25,6 +25,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/pkg/ingestion"
+	"github.com/haikoschol/cats-of-asia/pkg/monitoring"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
@@ -70,7 +71,7 @@ var (
 func main() {
 	validateEnv()
 
-	if err := initSentry(); err != nil {
+	if err := monitoring.InitSentry(sentryDSN); err != nil {
 		log.Fatal(err)
 	}
 
@@ -244,6 +245,10 @@ func newWebDavHandler(username, password string, ingestor *ingestion.Ingestor) (
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	if status == http.StatusInternalServerError {
+		sentry.CaptureException(err)
+	}
+
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -308,17 +313,4 @@ func validateEnv() {
 	}
 
 	validation.LogErrors(errs, true)
-}
-
-func initSentry() error {
-	if sentryDSN != "" {
-		err := sentry.Init(sentry.ClientOptions{
-			Dsn:              sentryDSN,
-			TracesSampleRate: 1.0,
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
