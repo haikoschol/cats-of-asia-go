@@ -19,9 +19,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	coa "github.com/haikoschol/cats-of-asia"
 	"github.com/haikoschol/cats-of-asia/internal/mastodon"
 	"github.com/haikoschol/cats-of-asia/internal/twitter"
+	"github.com/haikoschol/cats-of-asia/pkg/monitoring"
 	"github.com/haikoschol/cats-of-asia/pkg/postgres"
 	"github.com/haikoschol/cats-of-asia/pkg/validation"
 	_ "github.com/joho/godotenv/autoload"
@@ -43,23 +45,32 @@ var (
 	twitterConsumerSecret = os.Getenv("COABOT_TWITTER_CONSUMER_SECRET")
 	twitterAccessToken    = os.Getenv("COABOT_TWITTER_ACCESS_TOKEN")
 	twitterAccessSecret   = os.Getenv("COABOT_TWITTER_ACCESS_SECRET")
+
+	sentryDSN = os.Getenv("SENTRY_DSN")
 )
 
 func main() {
 	validateEnv()
 
+	if err := monitoring.InitSentry(sentryDSN); err != nil {
+		log.Fatal(err)
+	}
+
 	db, err := postgres.NewDatabase(dbUser, dbPassword, dbHost, dbName, postgres.SSLMode(dbSSLMode))
 	if err != nil {
 		log.Fatal(err)
+		sentry.CaptureException(err)
 	}
 
 	publishers, err := buildPublishers()
 	if err != nil {
 		log.Fatal(err)
+		sentry.CaptureException(err)
 	}
 
 	if err := publish(publishers, db); err != nil {
 		log.Fatal(err)
+		sentry.CaptureException(err)
 	}
 }
 
