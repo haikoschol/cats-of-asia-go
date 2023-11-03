@@ -264,7 +264,6 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	}
 }
 
-// TODO send html with the image instead and include credit and link to https://http.cat/
 func serve404(w http.ResponseWriter) {
 	f, err := staticEmbed.Open("static/404.jpg")
 	if err != nil {
