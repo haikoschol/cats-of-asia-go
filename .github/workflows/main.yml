@@ -1,4 +1,4 @@
-name: Publish
+name: Publish & Deploy
 
 on:
   push:
@@ -17,3 +17,13 @@ jobs:
       - uses: ko-build/setup-ko@v0.6
       - run: KO_DOCKER_REPO="ghcr.io/haikoschol/cats-of-asia/web" ko build --bare ./cmd/web
       - run: KO_DOCKER_REPO="ghcr.io/haikoschol/cats-of-asia/publish" ko build --bare ./cmd/publish
+  deploy:
+    name: Deploy to fly.io
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
