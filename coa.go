@@ -20,8 +20,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
-	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -48,19 +49,30 @@ func (img Image) Path() string {
 	return img.PathLarge
 }
 
+func (img Image) Name() string {
+	return filepath.Base(img.Path())
+}
+
 func (img Image) Read() (io.ReadCloser, error) {
-	f, err := os.Open(img.Path())
+	resp, err := http.Get(img.URLLarge.String())
 	if err != nil {
-		return nil, fmt.Errorf("unable to open file at %s: %w", img.Path(), err)
+		return nil, fmt.Errorf("unable to download image from %s: %w", img.URLLarge, err)
 	}
-	return f, err
+	return resp.Body, nil
 }
 
 func (img Image) Content() ([]byte, error) {
-	data, err := os.ReadFile(img.Path())
+	body, err := img.Read()
 	if err != nil {
-		return nil, fmt.Errorf("unable to read file at %s: %w", img.Path(), err)
+		return nil, err
 	}
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read image response: %w", err)
+	}
+
 	return data, nil
 }
 
@@ -122,6 +134,7 @@ type Database interface {
 	RemoveKnownImages(images []Image) ([]Image, error)
 	InsertImages(images []Image) error
 	InsertPost(image Image, platform Platform) error
+	Close() error
 }
 
 // Publisher allows posting images to a platform.

@@ -82,15 +82,14 @@ func (tp twitterPublisher) upload(image coa.Image) (*upload, error) {
 	b := &bytes.Buffer{}
 	form := multipart.NewWriter(b)
 
-	// this is leaking internal dir structure to X. maybe bad idea
-	fw, err := form.CreateFormFile("media", image.Path())
+	fw, err := form.CreateFormFile("media", image.Name())
 	if err != nil {
 		return nil, fmt.Errorf("unable to encode media for upload to Twitter: %w", err)
 	}
 
 	content, err := image.Content()
 	if err != nil {
-		return nil, fmt.Errorf("unable to read content from image %s: %w", image.Path(), err)
+		return nil, err
 	}
 
 	if _, err := fw.Write(content); err != nil {
