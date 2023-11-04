@@ -10,13 +10,8 @@ cron = "supercronic /home/nonroot/crontab"
 
 [http_service]
     processes = ["web"]
-    internal_port = 8080
     force_https = true
     auto_stop_machines = true
     auto_start_machines = true
     min_machines_running = 0
 
-    [http_service.concurrency]
-        type = "requests"
-        soft_limit = 200
-        hard_limit = 250
