@@ -23,4 +23,3 @@ COPY crontab /home/nonroot/crontab
 USER 65532:65532
 
 EXPOSE 8080
-
