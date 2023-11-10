@@ -26,15 +26,3 @@ build:
 dev:
     go build -o dist -tags dev ./cmd/web
     dist/web
-
-# build the web app and deploy to hostname (which is assumed to run x86_64 Linux)
-deploy-web hostname="catsof.asia":
-    GOOS=linux GOARCH=amd64 go build -o dist/linux ./cmd/web
-    ssh -t {{hostname}} "sudo systemctl stop coaweb"
-    scp dist/linux/web {{hostname}}:/usr/local/bin/
-    ssh -t {{hostname}} "sudo systemctl start coaweb"
-
-# build the cli tools and scp to hostname (which is assumed to run x86_64 Linux)
-deploy-utils hostname="catsof.asia":
-    GOOS=linux GOARCH=amd64 go build -o dist/linux ./cmd/publish ./cmd/ingest
-    scp dist/linux/{publish,ingest} {{hostname}}:/usr/local/bin/
