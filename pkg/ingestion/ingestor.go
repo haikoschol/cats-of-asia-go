@@ -542,17 +542,17 @@ func (i *Ingestor) uploadFile(path string) (*url.URL, error) {
 		return nil, fmt.Errorf("unable to upload file %s to Google Drive folder %s: %w", path, i.folderID, err)
 	}
 
-	url, err := url.Parse(res.WebContentLink)
+	wcl, err := url.Parse(res.WebContentLink)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse Google Drive file URL %s: %w", res.WebContentLink, err)
 	}
 
 	// Only keep the "id" query parameter. The API also returns at least "export=download" which causes the browser
 	// to download the image instead of displaying it.
-	q := url.Query()
-	url.RawQuery = fmt.Sprintf("id=%s", q.Get("id"))
+	q := wcl.Query()
+	wcl.RawQuery = fmt.Sprintf("id=%s", q.Get("id"))
 
-	return url, nil
+	return wcl, nil
 }
 
 func (i *Ingestor) createGDriveFile(path string, src *os.File, dest *drive.File) (*drive.File, error) {

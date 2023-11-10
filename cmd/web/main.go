@@ -61,7 +61,7 @@ var (
 
 	//go:embed "static"
 	staticEmbed embed.FS
-	staticFs    http.FileSystem = http.FS(staticEmbed)
+	staticFs    = http.FS(staticEmbed)
 
 	//go:embed "templates/index.html"
 	indexHTML     string
