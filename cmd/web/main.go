@@ -137,6 +137,11 @@ func (app *webApp) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		handleCorsRequest(w, "GET")
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -155,12 +160,19 @@ func (app *webApp) handleImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Add("Content-Type", "application/json")
+	writeCorsHeaders(w, "GET")
+
 	if _, err := w.Write(b); err != nil {
 		log.Println("failed writing http response:", err)
 	}
 }
 
 func (app *webApp) handleGetImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		handleCorsRequest(w, "GET")
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -250,6 +262,7 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	}
 
 	w.Header().Add("Content-Type", "application/json")
+	writeCorsHeaders(w, "GET")
 	w.WriteHeader(status)
 
 	payload := map[string]string{"error": fmt.Sprintf("%v", err)}
@@ -264,6 +277,20 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	}
 }
 
+func writeStatus(w http.ResponseWriter, status int, allowedMethods string) {
+	writeCorsHeaders(w, allowedMethods)
+	w.WriteHeader(status)
+}
+
+func handleCorsRequest(w http.ResponseWriter, allowedMethods string) {
+	writeStatus(w, http.StatusNoContent, allowedMethods)
+}
+
+func writeCorsHeaders(w http.ResponseWriter, allowedMethods string) {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	w.Header().Add("Access-Control-Allow-Methods", allowedMethods)
+}
+
 func serve404(w http.ResponseWriter) {
 	f, err := staticEmbed.Open("static/404.jpg")
 	if err != nil {
@@ -273,6 +300,8 @@ func serve404(w http.ResponseWriter) {
 	defer f.Close()
 
 	w.Header().Add("Content-Type", "image/jpeg")
+	writeCorsHeaders(w, "GET")
+	w.WriteHeader(http.StatusNotFound)
 
 	if _, err := io.Copy(w, f); err != nil {
 		log.Println("failed sending image in http response:", err)
